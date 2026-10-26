@@ -1,0 +1,74 @@
+#!/usr/bin/env bpftrace
+/* Main monitor TID and slow threshold in us. Sleeps are part of off-CPU time;
+ * ready-wait measures only the observed runnable interval before switch-in. */
+BEGIN
+{
+    printf("MONITOR_SCHED_READY tid=%d threshold_us=%d nsecs=%llu\n", $1, $2, nsecs);
+}
+
+tracepoint:sched:sched_wakeup
+/args->pid == $1/
+{
+    if (!@ready_ns) { @ready_ns = nsecs; }
+    @wakeups = count();
+}
+
+tracepoint:sched:sched_switch
+/args->prev_pid == $1 || args->next_pid == $1/
+{
+    $now = nsecs;
+    if (args->prev_pid == $1) {
+        @out_ns = $now;
+        @switch_out = count();
+        if (args->prev_state == 0 || args->prev_state == 256) {
+            if (!@ready_ns) { @ready_ns = $now; }
+        }
+    }
+    if (args->next_pid == $1) {
+        @switch_in = count();
+        if (@out_ns) {
+            $us = ($now - @out_ns) / 1000;
+            @offcpu_us = hist($us);
+            @offcpu_max_us = max($us);
+            if ($us >= $2) {
+                @offcpu_slow = count();
+                $sec = $now / 1000000000;
+                if (@off_last_sec != $sec) {
+                    @off_last_sec = $sec;
+                    printf("MONITOR_OFFCPU start_ns=%llu end_ns=%llu elapsed_us=%llu tid=%d previous_tid=%d previous_comm=%s\n",
+                           @out_ns, $now, $us, $1, args->prev_pid, args->prev_comm);
+                }
+            }
+            delete(@out_ns);
+        }
+        if (@ready_ns) {
+            $us = ($now - @ready_ns) / 1000;
+            @ready_wait_us = hist($us);
+            @ready_wait_max_us = max($us);
+            if ($us >= $2) {
+                @ready_slow = count();
+                $sec = $now / 1000000000;
+                if (@ready_last_sec != $sec) {
+                    @ready_last_sec = $sec;
+                    printf("MONITOR_READY_WAIT ready_ns=%llu run_ns=%llu wait_us=%llu tid=%d previous_tid=%d previous_comm=%s\n",
+                           @ready_ns, $now, $us, $1, args->prev_pid, args->prev_comm);
+                }
+            }
+            delete(@ready_ns);
+        }
+    }
+}
+
+tracepoint:sched:sched_process_exit
+/tid == $1/
+{
+    printf("MONITOR_TARGET_EXIT tid=%d nsecs=%llu\n", $1, nsecs);
+    exit();
+}
+
+END
+{
+    printf("MONITOR_SCHED_FINAL nsecs=%llu; unmatched ready/out timestamps are boundary samples.\n", nsecs);
+    clear(@off_last_sec);
+    clear(@ready_last_sec);
+}

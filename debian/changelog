@@ -1,3 +1,57 @@
+roboparty-analyze (1.0.15-1) stable; urgency=medium
+
+  * Install bundled firmware from the top-level firmware/ directory after it
+    moved out of etc/; the old path made debian/rules fail.
+  * Register rp-cpu0-trace.service with dh_installsystemd without enabling or
+    starting it, keeping the manual trace recorder opt-in.
+  * Restore the transitional robopi-analyze package promised in 1.0.11 so
+    upgrades from the old package name continue to work.
+
+ -- RoboParty <1984715306@qq.com>  Mon, 26 Oct 2026 18:10:00 +0800
+
+roboparty-analyze (1.0.14-1) stable; urgency=medium
+
+  * Replace CPU/CAN per-event trace printing and stack walks with bounded
+    in-kernel map rings and a delayed freeze after slow runnable waits.
+  * Add a compile-only observer preflight without attaching probes.
+
+ -- RoboParty <1984715306@qq.com>  Thu, 22 Oct 2026 04:30:00 +0800
+
+roboparty-analyze (1.0.13-1) stable; urgency=medium
+
+  * flash_hpm.sh: stop hpm-sreset.service before entering USB BootROM and
+    start it again after flashing. The presence monitor could otherwise reset
+    the HPM while it is being programmed. Override the unit with
+    HPM_RESET_SERVICE.
+  * Check session storage every 20 seconds, rotate active sessions above
+    1024 MiB and evict completed sessions against a 6000 MiB budget.
+  * Correct the capture preflight MiB-to-KiB calculation.
+  * Bound incremental ASC conversion chunks to 16 MiB and terminate the
+    converter child when its flush worker stops.
+
+ -- RoboParty <1984715306@qq.com>  Thu, 22 Oct 2026 02:30:00 +0800
+
+roboparty-analyze (1.0.12-1) stable; urgency=medium
+
+  * Merge the read-only eBPF observation toolkit into the analyze package.
+  * Add USB URB submit-to-giveback lifecycle tracing and CAN bus-off/restart
+    entry tracing, with packaged command aliases and documentation.
+  * Add monitor-thread off-CPU and runnable-wait tracing for feedback timeout
+    diagnosis, with a packaged robopi-ebpf-monitor-sched command.
+  * Resolve eBPF runner symlinks before locating their companion probes.
+
+ -- RoboParty <1984715306@qq.com>  Wed, 21 Oct 2026 21:45:00 +0800
+
+roboparty-analyze (1.0.11-1) stable; urgency=medium
+
+  * Rename the package and internal library path to roboparty-analyze.
+    Keep existing commands and service names, and provide a transitional
+    robopi-analyze package for upgrades.
+  * Align HPM UART defaults with EtherCANFD at 1500000 baud and explicitly
+    configure 8N1. Preserve HPM_LOG_BAUD overrides for older firmware.
+
+ -- RoboParty <1984715306@qq.com>  Wed, 21 Oct 2026 21:30:00 +0800
+
 robopi-analyze (1.0.10-1) stable; urgency=medium
 
   * robopi-seven-analyze: write one CSV per dimension instead of a single

@@ -1,0 +1,50 @@
+#!/usr/bin/env bpftrace
+/* CPU CAN_IRQ_TID USB_IRQ_TID RX_TID TX_TID. No early trigger: retain the
+ * latest window until the coordinator sees the application's fault dump.
+ */
+let @switch_ring = hash(16384);
+let @wait_ring = hash(4096);
+BEGIN
+{
+    @target[$2] = 1; @target[$3] = 1; @target[$4] = 1; @target[$5] = 1;
+    @switch_seq = (uint64)0;
+    @wait_seq[$2] = (uint64)0; @wait_seq[$3] = (uint64)0;
+    @wait_seq[$4] = (uint64)0; @wait_seq[$5] = (uint64)0;
+    printf("RESPONSE_SCHED_READY clock=monotonic cpu=%d\n", $1);
+}
+tracepoint:sched:sched_wakeup,
+tracepoint:sched:sched_wakeup_new
+/@target[args->pid]/
+{
+    if (!@ready[args->pid]) { @ready[args->pid] = nsecs(monotonic); }
+}
+tracepoint:sched:sched_switch
+{
+    $now = nsecs(monotonic);
+    if (cpu == $1) {
+        $seq = @switch_seq;
+        @switch_ring[$seq % 16384] = ($seq, $now, (int64)args->prev_pid,
+            (int64)args->next_pid, args->prev_state,
+            (int64)args->prev_prio, (int64)args->next_prio,
+            args->prev_comm, args->next_comm);
+        @switch_seq = $seq + 1;
+    }
+    if (@target[args->prev_pid] && (args->prev_state == 0 || args->prev_state == 256)) {
+        if (!@ready[args->prev_pid]) { @ready[args->prev_pid] = $now; }
+    }
+    if (@target[args->next_pid]) {
+        $next = args->next_pid;
+        $ready = @ready[$next];
+        if ($ready) {
+            $seq = @wait_seq[$next];
+            @wait_ring[$next, $seq % 1024] = ($seq, $ready, $now, cpu);
+            @wait_seq[$next] = $seq + 1;
+            @wait_max_ns[$next] = max((uint64)((int64)$now - (int64)$ready));
+        }
+        $deleted = delete(@ready[$next]);
+    }
+}
+END
+{
+    printf("RESPONSE_SCHED_FINAL ns=%llu\n", nsecs(monotonic));
+}

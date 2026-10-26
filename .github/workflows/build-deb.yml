@@ -1,4 +1,4 @@
-name: Build RoboPi Analyze Deb Package
+name: Build RoboParty Analyze Deb Package
 
 on:
   push:
@@ -34,19 +34,24 @@ jobs:
 
         DEBIAN_VERSION=$(dpkg-parsechangelog -S Version)
         VERSION=${DEBIAN_VERSION%%-*}
+        mv "../roboparty-analyze_${DEBIAN_VERSION}_all.deb" .
         mv "../robopi-analyze_${DEBIAN_VERSION}_all.deb" .
 
         echo "PKG_VERSION=$VERSION" >> "$GITHUB_ENV"
-        ls -l robopi-analyze_*_all.deb
+        ls -l roboparty-analyze_*_all.deb
 
     - name: Upload Debian package
       uses: actions/upload-artifact@v4
       with:
-        name: robopi-analyze-v${{ env.PKG_VERSION }}-all
-        path: "robopi-analyze_*_all.deb"
+        name: roboparty-analyze-v${{ env.PKG_VERSION }}-all
+        path: |
+          roboparty-analyze_*_all.deb
+          robopi-analyze_*_all.deb
 
     - name: Upload to GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v2
       with:
-        files: "robopi-analyze_*_all.deb"
+        files: |
+          roboparty-analyze_*_all.deb
+          robopi-analyze_*_all.deb

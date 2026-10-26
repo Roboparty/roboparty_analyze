@@ -1,0 +1,14 @@
+#!/usr/bin/env bpftrace
+/* IFINDEX. Observe CAN state transition entry points only. */
+BEGIN { printf("CAN_STATE_READY ifindex=%d\n", $1); }
+kprobe:can_bus_off
+{
+    $ndev = (struct net_device *)arg0;
+    if ($1 == 0 || $ndev->ifindex == $1) { printf("CAN_BUS_OFF ifindex=%d iface=%s cpu=%d tid=%d comm=%s ns=%llu\n", $ndev->ifindex, $ndev->name, cpu, tid, comm, nsecs); @bus_off[$ndev->ifindex] = count(); }
+}
+kprobe:can_restart
+{
+    $ndev = (struct net_device *)arg0;
+    if ($1 == 0 || $ndev->ifindex == $1) { printf("CAN_RESTART ifindex=%d iface=%s cpu=%d tid=%d comm=%s ns=%llu\n", $ndev->ifindex, $ndev->name, cpu, tid, comm, nsecs); @restart[$ndev->ifindex] = count(); }
+}
+END { printf("CAN_STATE_FINAL: entry probes do not prove hardware recovery completed.\n"); }

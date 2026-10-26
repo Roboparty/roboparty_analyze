@@ -9,6 +9,10 @@ hpm_log_service=${HPM_LOG_CAPTURE_SERVICE:-hpm-log-capture.service}
 bms_service=${BMS_SERVICE:-bms.service}
 inference_session=${INFERENCE_SCREEN_SESSION:-inference_session}
 source_dir=${USBCAN_CAPTURE_DIR:-/run/usbcan}
+# The seven-dimensional recorder writes PCAP directly into its session.
+if [ -L "$source_dir/current-session" ]; then
+    source_dir=$(readlink -f "$source_dir/current-session")
+fi
 snapshot_root=${USBCAN_SNAPSHOT_DIR:-/home/robo/usbcan-snapshots}
 lock_file=${USBCAN_SNAPSHOT_LOCK:-/run/lock/usbcan-debug-snapshot.lock}
 timestamp=$(date +%Y%m%d-%H%M%S)

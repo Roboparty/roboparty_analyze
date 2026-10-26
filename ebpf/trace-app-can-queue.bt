@@ -1,0 +1,91 @@
+#!/usr/bin/env bpftrace
+/* PID RX_TID IFINDEX SECONDS. CLOCK_MONOTONIC matches the application ring.
+ * Learn the application's exact sock from its receive syscall, then follow the
+ * same cloned skb from enqueue entry to skb_recv_datagram return. No printf in
+ * the hot path. First pre-existing backlog is deliberately marked unpaired.
+ */
+let @enqueue = hash(4096);
+let @dequeue_ring = hash(4096);
+BEGIN
+{
+    @start = nsecs(monotonic);
+    @dequeue_seq = (uint64)0;
+    printf("APP_CAN_QUEUE_READY pid=%d rx_tid=%d ifindex=%d clock=monotonic\n", $1, $2, $3);
+}
+
+kprobe:skb_recv_datagram
+/pid == $1 && tid == $2/
+{
+    @target_sk = arg0;
+    @recv_start[tid] = nsecs(monotonic);
+    @recv_flags[tid] = arg1;
+}
+
+kprobe:sock_queue_rcv_skb_reason
+/@target_sk && arg0 == @target_sk/
+{
+    $skb = (struct sk_buff *)arg1;
+    $now = nsecs(monotonic);
+    if ($skb->dev && $skb->dev->ifindex == $3) {
+        // Linux CAN/CAN-FD UAPI: can_id at byte 0, payload starts at byte 8.
+        @enqueue[arg1] = ($now, (uint64)*(uint32 *)$skb->data, *(uint64 *)($skb->data + 8));
+        @queue_call[tid] = arg1;
+        @enqueue_calls = count();
+    }
+}
+
+kretprobe:sock_queue_rcv_skb_reason
+/@queue_call[tid]/
+{
+    if ((int64)retval != 0) {
+        @enqueue_failures[(int64)retval] = count();
+        $deleted = delete(@enqueue[@queue_call[tid]]);
+    }
+    $deleted = delete(@queue_call[tid]);
+}
+
+kretprobe:skb_recv_datagram
+/pid == $1 && tid == $2 && @recv_start[tid]/
+{
+    $now = nsecs(monotonic);
+    if (retval != 0) {
+        $seq = @dequeue_seq;
+        if (has_key(@enqueue, retval)) {
+            $enq = @enqueue[retval];
+            @dequeue_ring[$seq % 4096] = ($seq, $enq.0, $now, retval,
+                $enq.1, $enq.2, cpu, @recv_flags[tid]);
+            $wait = (uint64)((int64)$now - (int64)$enq.0);
+            @queue_wait_max_ns = max($wait);
+            @queue_wait_us = hist($wait / 1000);
+            $deleted = delete(@enqueue[retval]);
+        } else {
+            @unpaired = count();
+            @dequeue_ring[$seq % 4096] = ($seq, (uint64)0, $now, retval,
+                (uint64)0, (uint64)0, cpu, @recv_flags[tid]);
+        }
+        @dequeue_seq = $seq + 1;
+    }
+    $deleted = delete(@recv_start[tid]); $deleted = delete(@recv_flags[tid]);
+}
+
+tracepoint:skb:kfree_skb
+/@target_sk/
+{
+    $skb = (uint64)args->skbaddr;
+    if (has_key(@enqueue, $skb)) {
+        @tracked_freed[args->reason] = count();
+        $deleted = delete(@enqueue[$skb]);
+    }
+}
+
+interval:s:1
+{
+    if ((uint64)((int64)nsecs(monotonic) - (int64)@start) / 1000000000 >= $4) { exit(); }
+}
+
+END
+{
+    printf("APP_CAN_QUEUE_FINAL ns=%llu\n", nsecs(monotonic));
+    printf("dequeue_ring: seq, enqueue_ENTRY_ns, dequeue_ns, skb, can_id, payload8_native_endian, cpu, recv_flags\n");
+    printf("Enqueue entry precedes actual queue insertion. Ring overwrites old records; unpaired is not zero delay.\n");
+}

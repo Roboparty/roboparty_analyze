@@ -9,6 +9,7 @@ CAN_INTERFACE=${CAN_INTERFACE:-can0}
 CAPTURE_DIR=${CAPTURE_DIR:-/run/usbcan}
 FILE_SIZE_MB=${FILE_SIZE_MB:-64}
 FILE_COUNT=${FILE_COUNT:-8}
+CAPTURE_ROLLING=${CAPTURE_ROLLING:-yes}
 
 SYS_CLASS_NET=${USBCAN_SYS_CLASS_NET:-/sys/class/net}
 MODPROBE_BIN=${USBCAN_MODPROBE_BIN:-/usr/sbin/modprobe}
@@ -98,6 +99,13 @@ fi
 capture_interface=$(resolve_usbmon_interface)
 mkdir -p "$CAPTURE_DIR"
 
-echo "usbcan-capture: recording $capture_interface to $CAPTURE_DIR (${FILE_COUNT} x ${FILE_SIZE_MB} MB)"
-exec "$TCPDUMP_BIN" -Z root -i "$capture_interface" -s 0 -B 16384 -U \
-    -C "$FILE_SIZE_MB" -W "$FILE_COUNT" -w "$CAPTURE_DIR/usbcan.pcap"
+case $CAPTURE_ROLLING in
+    yes) set -- -U -W "$FILE_COUNT" ;;
+    no) set -- ;;
+    *) die "CAPTURE_ROLLING must be yes or no" ;;
+esac
+echo "usbcan-capture: recording $capture_interface to $CAPTURE_DIR (size=${FILE_SIZE_MB} MB, rolling=$CAPTURE_ROLLING)"
+# Persistent sessions use normal buffered writes instead of flushing each
+# packet. Rotation and graceful shutdown flush the last userspace buffer.
+exec "$TCPDUMP_BIN" -Z root -i "$capture_interface" -s 0 -B 16384 \
+    -C "$FILE_SIZE_MB" "$@" -w "$CAPTURE_DIR/usbcan.pcap"

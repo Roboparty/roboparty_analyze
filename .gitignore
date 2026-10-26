@@ -19,6 +19,7 @@ cmake-build-*/
 # Debian helper staging and generated metadata.
 debian/.debhelper/
 debian/robopi-analyze/
+debian/roboparty-analyze/
 debian/debhelper-build-stamp
 debian/files
 debian/*.debhelper

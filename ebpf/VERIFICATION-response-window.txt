@@ -1,0 +1,50 @@
+2026-10-22: response counter and receive-path preparation
+
+Scope:
+- No application rebuild, library replacement, service restart or affinity change.
+- Local LRO, SocketCAN and RobotInterface CPP baselines matched board SHA256.
+- Application patch is prepared, NOT active in the board process.
+- Staged tools: /root/roboparty-count-trace-staging/ (not installed package).
+
+IMPORTANT INCIDENT:
+- Incorrectly used bpftrace 0.27 '-d all' as a compile-only option.
+- It actually attached probes. Scheduler map reached default capacity and
+  generated repeated map_update_elem warnings; debug log reached 162143017 bytes.
+- At 2026-10-22 05:41:50.450438538 CST the application reported Motors offline,
+  count=26 on multiple buses. The monitoring program subsequently requested stop.
+- No agent stop/restart command was sent to the robot. Nevertheless observer
+  interference cannot be excluded; this is NOT a clean failure reproduction.
+- Stopped only this attempt's bpftrace PIDs 106857 and 106860, after checking
+  their command lines. Both were confirmed absent. No robot restart performed.
+- Local evidence: test/tmp/response-trace-prepare-20261022/board-status.txt and
+  sched-compile.log. Retain the raw log as an invalid-capture artifact.
+
+Corrections:
+- Compile-only now uses '--mode codegen --emit-elf', not '-d all'.
+- '--dry-run' also attaches probes, so is not a no-attachment check.
+- Confirmed against bpftrace v0.27.0 src/main.cpp: CODEGEN returns before
+  run_bpftrace(). https://github.com/bpftrace/bpftrace/blob/v0.27.0/src/main.cpp
+- Scheduler switch/wait rings and socket enqueue/dequeue maps declare explicit
+  capacities. Runtime map-full/helper warnings invalidate the capture.
+- Existing run-cpu-can-sched.sh compile-only branch also uses --mode codegen.
+
+Checks:
+- Host C++17 syntax checks passed for modified LRO, SocketCAN and RobotInterface.
+- Four producer threads: exact 4000 increments, unique old values 0..3999,
+  clear replaced 4000 with 0, checks observed expected values; freeze prevented
+  subsequent events. Enabled trace contained 4004 events.
+- AddressSanitizer/UndefinedBehaviorSanitizer test passed; disabled path passed.
+- Application patch passed patch --dry-run against saved matching baselines.
+- Python and shell syntax checks passed.
+- Coordinator synthetic timeout and child-startup-failure tests: all observer
+  children terminated, only newly owned process groups signalled, app untouched.
+- Corrected --mode codegen generated queue.o and sched.o successfully on ARM64
+  with bpftrace 0.27 and running-kernel BTF. This checks compilation, not verifier
+  acceptance, live socket matching, or acceptable real-time overhead.
+
+Not yet validated:
+- Full application/ROS build and ABI-consistent deployment of all dependents.
+- Live correlation of application counter, own socket queue and scheduling.
+- New probe overhead under robot load, six-hour endurance, or any claimed fix.
+- Do not infer zero queue wait from missing/unpaired samples or join windows
+  from different application runs as a causal chain.

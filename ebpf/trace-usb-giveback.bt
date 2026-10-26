@@ -1,0 +1,68 @@
+#!/usr/bin/env bpftrace
+/*
+ * Usage: sudo bash run-usb-giveback.sh [SECONDS] [THRESHOLD_US]
+ * Direct: sudo bpftrace trace-usb-giveback.bt BUS DEV THRESHOLD_US
+ * Example only: BUS=3 DEV=10; obtain current numbers from lsusb first.
+ * Requires running-kernel BTF and both kprobe symbols. Ctrl-C prints maps.
+ * T1 is function entry, slightly BEFORE the actual giveback queue insertion.
+ * nsecs uses the bpftrace version's default clock; all timestamps here share it.
+ * Pending entries at exit may include ordinary in-flight boundary samples.
+ */
+
+BEGIN
+{
+    printf("USB bus=%d dev=%d; slow threshold=%d us; Ctrl-C to finish\n", $1, $2, $3);
+    printf("Slow lines limited to one per endpoint per second; hist/max include all pairs.\n");
+}
+
+kprobe:usb_hcd_giveback_urb
+{
+    $now = nsecs;
+    $u = (struct urb *)arg1;
+    if ($u->dev->bus->busnum == $1 && $u->dev->devnum == $2) {
+        $ep = $u->ep->desc.bEndpointAddress;
+        if (@pending_t1_ns[arg1]) {
+            @duplicate_t1[$ep] = count();
+        }
+        @pending_cpu[arg1] = cpu;
+        @pending_t1_ns[arg1] = $now;
+        @t1_count[$ep] = count();
+    }
+}
+
+kprobe:__usb_hcd_giveback_urb
+{
+    $now = nsecs;
+    $t1 = @pending_t1_ns[arg0];
+    if ($t1) {
+        $u = (struct urb *)arg0;
+        $ep = $u->ep->desc.bEndpointAddress;
+        $from_cpu = @pending_cpu[arg0];
+        // Remove the lifecycle before the driver's callback can resubmit this URB.
+        delete(@pending_t1_ns[arg0]);
+        delete(@pending_cpu[arg0]);
+        $us = ($now - $t1) / 1000;
+        @paired_count[$ep] = count();
+        @paired_total = count();
+        @delay_us[$ep] = hist($us);
+        @max_us[$ep] = max($us);
+        if ($us >= $3) {
+            @slow_count[$ep] = count();
+            $sec = $now / 1000000000;
+            if (@last_print_sec[$ep] != $sec) {
+                @last_print_sec[$ep] = $sec;
+                printf("SLOW urb=0x%lx ep=0x%x t1_ns=%llu t2_ns=%llu delay_us=%llu cpu=%d->%d tid=%d comm=%s\n",
+                       arg0, $ep, $t1, $now, $us, $from_cpu, cpu, tid, comm);
+            }
+        }
+    }
+}
+
+END
+{
+    @end_ns = nsecs;
+    printf("Final maps: endpoint keys are decimal (129=0x81, 2=0x02).\n");
+    printf("pending_t1_ns holds T1 with no observed T2; age = end_ns - pending_t1_ns.\n");
+    printf("No paired samples is NOT evidence of normal latency.\n");
+    clear(@last_print_sec);
+}

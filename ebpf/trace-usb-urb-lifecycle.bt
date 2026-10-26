@@ -1,0 +1,25 @@
+#!/usr/bin/env bpftrace
+/* BUS DEV THRESHOLD_US. Host-side URB submit -> HCD giveback timing. */
+BEGIN { printf("USB_URB_READY bus=%d dev=%d threshold_us=%d\n", $1, $2, $3); }
+kprobe:usb_submit_urb
+{
+    $u = (struct urb *)arg0;
+    if ($u->dev->bus->busnum == $1 && $u->dev->devnum == $2) {
+        @submit_ns[arg0] = nsecs;
+        @submit_cpu[arg0] = cpu;
+        @submit_ep[arg0] = $u->ep->desc.bEndpointAddress;
+        @submitted[@submit_ep[arg0]] = count();
+    }
+}
+kprobe:usb_hcd_giveback_urb
+{
+    $u = (struct urb *)arg1;
+    $start = @submit_ns[arg1];
+    if ($start) {
+        $now = nsecs; $ep = @submit_ep[arg1]; $us = ($now - $start) / 1000;
+        @completed[$ep] = count(); @lifecycle_us[$ep] = hist($us); @lifecycle_max_us[$ep] = max($us);
+        if ($us >= $3) printf("USB_URB_SLOW ep=0x%x status=%d submit_ns=%llu giveback_ns=%llu delay_us=%llu cpu=%d->%d tid=%d comm=%s\n", $ep, $u->status, $start, $now, $us, @submit_cpu[arg1], cpu, tid, comm);
+        delete(@submit_ns[arg1]); delete(@submit_cpu[arg1]); delete(@submit_ep[arg1]);
+    }
+}
+END { printf("USB_URB_FINAL: unmatched submits are in-flight or capture-boundary samples.\n"); }

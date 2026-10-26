@@ -1,0 +1,68 @@
+2026-10-22: CPU / CAN scheduling observer
+
+VERSION 2 UPDATE:
+- Replaced event printf and all stack walks with fixed-size map rings.
+- CPU switch ring: 8192 slots; per-target slow wait/syscall: 64 each;
+  per IRQ/vector paired intervals: 32 each. Rings intentionally overwrite.
+- Freeze after a slow runnable wait, with 1s warmup and 100ms requested tail.
+  Actual freeze time is recorded; fallback timer may freeze later.
+- Runner pins its compiler/exporter to another allowed CPU, adds compile-only
+  mode and validates exported switch sequence continuity and slot indices.
+- Full original BT compiled on host and on ARM64 board bpftrace 0.20.2 using
+  -d (no attachment). The latter is compilation, not BPF verifier validation.
+- Live host smoke test of v2 bodies passed: four sleeping workers, 269
+  contiguous retained switch records; trigger/freeze and slow syscall/wait
+  maps observed; only 193 bytes while active, 63489 bytes final output.
+  No ERROR/lost-event diagnostic. Host 0.14 BEGIN/END attachment sites only
+  were substituted, as for v1. Evidence: test/tmp/cpu-can-sched-v2-host.log.
+- Explicit 64-bit tuple fields avoid host 0.14's unaligned stack generation
+  for mixed-width tuple members, caught by its live BPF verifier test.
+- No v2 robot workload test or verified real-time overhead budget yet.
+
+HISTORICAL VERSION 1 BOARD RESULT: FAILED.
+The previous host-only validation below is not evidence of acceptable runtime
+overhead. No further board tracing was started after the failure.
+
+Board test (original source hash 87191d5f3fd517fbab6309e4c1eaa7b53705c7e4255f9a92ceabf9b9c48adc53):
+- Kernel 6.18.58-current-rockchip64 PREEMPT_RT; bpftrace 0.20.2.
+- CPU0, CAN IRQ TID685, USB IRQ TID164, RX13474, TX13478; duration 10s.
+- READY epoch 1792612717.983418488; FATAL 1792612719.032120461,
+  1048.701973ms later: can0/id1-7 all count=26. SSH remained available.
+- 8606174-byte log, 128022 lines, 43 stack lookup errors.
+- Lost 28677 + 32210 = 60887 events. No FINAL marker; runner failed.
+- Observer interference cannot be excluded; this is not an independent
+  reproduction establishing the historical fault's cause.
+- Evidence: test/board-bt-validation-20261022/ in repository, including
+  journal-window.txt and cpu-can-sched-20261021T195834Z-u9hyaX/ snapshots/log.
+- Fixed local runnable switch-out printing of a nonexistent blocking stack;
+  this fix is not deployed/retested. Full-output overhead remains unresolved.
+
+Changed:
+- Added trace-cpu-can-sched.bt and run-cpu-can-sched.sh.
+- Added Debian command symlink robopi-ebpf-cpu-can-sched.
+- Existing ebpf/*.sh and ebpf/*.bt install rules include both new files.
+
+Host checks:
+- bash -n and --help passed.
+- bpftrace 0.14 compiled the complete original probe via -d after fixing
+  irq_handler_entry's dynamic name field with str(args->name).
+- Full original runner failed to attach on this host because its installed
+  bpftrace cannot resolve /proc/self/exe:BEGIN_trigger. The runner returned
+  failure and preserved sched.log. This is not a successful runner test.
+- For a live host smoke test, replaced BEGIN/END attachment sites only with
+  controller getpgid/getsid probes, following existing check-host.py practice.
+  Four local workers each slept ten times for 20ms. Observed SWITCH, WAKE,
+  OFFCPU, SYSCALL, TARGET_EXIT and FINAL; verified OFFCPU samples >=15ms.
+  No lost-event diagnostic was observed. Output: 44002 bytes.
+  Evidence: repository test/tmp/cpu-can-sched-host-smoke.log.
+- Host kernel sched_switch format uses 256 for the preemption marker.
+- git diff --check passed for tracked changes; new files separately checked
+  for trailing whitespace.
+
+Limits:
+- Initial host checks did not access the board. Subsequent board validation
+  is recorded above. No robot launch, CAN transmit, priority/affinity changes
+  were performed by this validation. No packaging/build performed.
+- No controlled runnable-starvation test; READY_WAIT logic has not yet been
+  validated against a deliberately delayed runnable worker.
+- No application queue/callback/counter instrumentation added.

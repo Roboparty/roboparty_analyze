@@ -1,0 +1,138 @@
+#!/usr/bin/env bpftrace
+/* CPU CAN_IRQ_TID USB_IRQ_TID CAN_RX_TID CAN_TX_TID THRESHOLD_US.
+ * Fixed-size map rings; no per-event printf or stack walks.
+ * Freeze 100ms after the first slow runnable wait (after 1s warmup).
+ */
+BEGIN
+{
+    @target[$2] = 1; @target[$3] = 1;
+    @target[$4] = 1; @target[$5] = 1;
+    @arm_ns = nsecs + 1000000000;
+    printf("CPU_CAN_SCHED_READY version=2 ns=%llu cpu=%d can_irq=%d usb_irq=%d rx=%d tx=%d threshold_us=%d switch_slots=8192 post_ms=100 warmup_ms=1000\n",
+           nsecs, $1, $2, $3, $4, $5, $6);
+}
+
+tracepoint:sched:sched_wakeup,
+tracepoint:sched:sched_wakeup_new
+/!@frozen && @target[args->pid]/
+{
+    if (!@ready[args->pid]) { @ready[args->pid] = nsecs; }
+}
+
+tracepoint:sched:sched_switch
+/!@frozen/
+{
+    $now = nsecs;
+    if (@freeze_at && $now >= @freeze_at) {
+        @frozen = $now;
+    } else {
+        $prev = args->prev_pid; $next = args->next_pid;
+        // Only this CPU's sched_switch probe writes this sequence/ring.
+        if (cpu == $1) {
+            $seq = @switch_seq;
+            @switch_ring[$seq % 8192] = ($seq, $now, (int64)$prev, (int64)$next,
+                (int64)args->prev_state, (int64)args->prev_prio, (int64)args->next_prio,
+                args->prev_comm, args->next_comm);
+            @switch_seq = $seq + 1;
+        }
+        if (@target[$prev]) {
+            @out[$prev] = $now;
+            @out_state[$prev] = args->prev_state;
+            if (args->prev_state == 0 || args->prev_state == 256) {
+                if (!@ready[$prev]) { @ready[$prev] = $now; }
+            }
+        }
+        if (@target[$next]) {
+            @target_switch_in[$next] = count();
+            $ready = @ready[$next];
+            $wait_us = (uint64)0;
+            if ($ready) {
+                $wait_us = ($now - $ready) / 1000;
+                @ready_max_us[$next] = max($wait_us);
+            }
+            $out = @out[$next];
+            if (($out && ($now - $out) / 1000 >= $6) || $wait_us >= $6) {
+                $seq = @wait_seq[$next];
+                // seq, switch-in, switch-out, state, ready, CPU, wait_us
+                @wait_ring[$next, $seq % 64] = ($seq, $now, $out,
+                    @out_state[$next], $ready, (uint64)cpu, $wait_us);
+                @wait_seq[$next] = $seq + 1;
+            }
+            if ($wait_us >= $6 && $now >= @arm_ns && !@freeze_at) {
+                // Other CPUs may race here; this is an observed trigger,
+                // not a guarantee of the earliest fault across CPUs.
+                @trigger = ($now, (int64)$next, (uint64)cpu, $ready, $wait_us);
+                @freeze_at = $now + 100000000;
+            }
+            delete(@out[$next]); delete(@out_state[$next]); delete(@ready[$next]);
+        }
+    }
+}
+
+tracepoint:raw_syscalls:sys_enter
+/!@frozen && @target[tid]/
+{
+    @sys_start[tid] = nsecs;
+    @sys_id[tid] = args->id;
+    @sys_arg0[tid] = args->args[0];
+}
+
+tracepoint:raw_syscalls:sys_exit
+/!@frozen && @target[tid] && @sys_start[tid]/
+{
+    $now = nsecs;
+    if (($now - @sys_start[tid]) / 1000 >= $6) {
+        $seq = @sys_seq[tid];
+        // seq, enter, exit, CPU, syscall ID, argument 0, return value
+        @sys_ring[tid, $seq % 64] = ($seq, @sys_start[tid], $now, (uint64)cpu,
+            @sys_id[tid], @sys_arg0[tid], args->ret);
+        @sys_seq[tid] = $seq + 1;
+    }
+    delete(@sys_start[tid]); delete(@sys_id[tid]); delete(@sys_arg0[tid]);
+}
+
+tracepoint:irq:irq_handler_entry
+/!@frozen && cpu == $1/
+{ @hard_start[args->irq] = nsecs; }
+
+tracepoint:irq:irq_handler_exit
+/!@frozen && cpu == $1 && @hard_start[args->irq]/
+{
+    $irq = args->irq;
+    $seq = @hard_seq[$irq];
+    // Per IRQ: seq, entry, exit, interrupted TID, handler result
+    @hard_ring[$irq, $seq % 32] = ($seq, @hard_start[$irq], nsecs, tid, (int64)args->ret);
+    @hard_seq[$irq] = $seq + 1;
+    delete(@hard_start[$irq]);
+}
+
+tracepoint:irq:softirq_entry
+/!@frozen && cpu == $1/
+{ @soft_start[args->vec] = nsecs; }
+
+tracepoint:irq:softirq_exit
+/!@frozen && cpu == $1 && @soft_start[args->vec]/
+{
+    $vec = args->vec;
+    $seq = @soft_seq[$vec];
+    @soft_ring[$vec, $seq % 32] = ($seq, @soft_start[$vec], nsecs, tid);
+    @soft_seq[$vec] = $seq + 1;
+    delete(@soft_start[$vec]);
+}
+
+tracepoint:sched:sched_process_exit
+/!@frozen && @target[tid]/
+{
+    @target_exit[tid] = nsecs;
+    delete(@target[tid]);
+}
+
+interval:s:1
+{
+    if (@freeze_at && nsecs >= @freeze_at && !@frozen) { @frozen = nsecs; }
+}
+
+END
+{
+    printf("CPU_CAN_SCHED_FINAL version=2 ns=%llu; maps are bounded rings; sort tuples by sequence/time, not slot. Pending entries are boundary samples.\n", nsecs);
+}

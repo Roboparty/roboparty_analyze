@@ -36,8 +36,8 @@ command -v systemctl >/dev/null 2>&1 || die "systemctl not found"
 [[ $rotate_secs =~ ^[0-9]+$ ]] || die "SESSION_MAX_DURATION_SECS must be a non-negative integer"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dimension_dir=${SEVEN_DIMENSIONS_DIR:-$script_dir/../dimensions}
-if [[ ! -x $dimension_dir/01_bms_status.sh && -x /opt/roboparty/lib/robopi-analyze/dimensions/01_bms_status.sh ]]; then
-    dimension_dir=/opt/roboparty/lib/robopi-analyze/dimensions
+if [[ ! -x $dimension_dir/01_bms_status.sh && -x /opt/roboparty/lib/roboparty-analyze/dimensions/01_bms_status.sh ]]; then
+    dimension_dir=/opt/roboparty/lib/roboparty-analyze/dimensions
 fi
 [[ -x $dimension_dir/01_bms_status.sh ]] || die "dimension scripts not found: $dimension_dir"
 ring_capture=${USBCAN_RING_CAPTURE_COMMAND:-$script_dir/capture_usbcan_ring.sh}
@@ -48,11 +48,6 @@ fi
 cleanup_command=${SESSION_CLEANUP_COMMAND:-$script_dir/cleanup_sessions.sh}
 if [[ ! -x $cleanup_command && -x /opt/roboparty/bin/robopi-session-cleanup ]]; then
     cleanup_command=/opt/roboparty/bin/robopi-session-cleanup
-fi
-flush_interval=${FLUSH_INTERVAL_SECS:-10}
-flush_command=${SEVEN_FLUSH_COMMAND:-$script_dir/flush_session.sh}
-if [[ ! -x $flush_command && -x /opt/roboparty/bin/robopi-session-flush ]]; then
-    flush_command=/opt/roboparty/bin/robopi-session-flush
 fi
 
 # stop_requested is set only by a real external signal (systemctl stop,
@@ -80,6 +75,8 @@ next_output_path() {
 run_session() {
     local output=$1
     local capture_pid= dimension_pids=() rotate_timer_pid=
+    local can_pid= failed_child= failure=0 capture_status=0 can_status=0 pid
+    local -A critical_names=() signalled=()
 
     [[ ! -e $output ]] || die "session directory already exists: $output"
 
@@ -95,7 +92,7 @@ run_session() {
     # Preflight: the target partition must fit the ring cap plus a margin.
     # Fail loudly here rather than let dimensions silently write 0-byte files.
     local need_kb have_kb
-    need_kb=$(( ${USBCAN_FILE_SIZE_MB:-64} * ${USBCAN_FILE_COUNT:-8} + 512 ))
+    need_kb=$(( (${USBCAN_FILE_SIZE_MB:-64} * ${USBCAN_FILE_COUNT:-8} + 512) * 1024 ))
     have_kb=$(df -Pk "$session_parent" 2>/dev/null | awk 'NR==2 {print $4}' || true)
     [[ -n $have_kb && $have_kb -ge $need_kb ]] || \
         die "insufficient space in $session_parent: need ${need_kb} KiB, available ${have_kb:-unknown} KiB"
@@ -113,27 +110,33 @@ run_session() {
     : > "$output/dmesg-live.txt"
     : > "$output/hpm-uart-live.txt"
     : > "$output/can.log"
-    : > "$output/can.asc"
     : > "$output/inference-session.txt"
     : > "$output/thermal.txt"
 
     systemctl start "$hpm_service" || true
 
-    CAPTURE_DIR="$capture_dir" "$ring_capture" & capture_pid=$!
+    # Closed PCAP segments stay in persistent storage without mirroring.
+    # The session guard bounds the active session's size.
+    mkdir -p "$capture_dir"
+    output=$(realpath "$output")
+    ln -sfn "$output" "$capture_dir/current-session"
+    CAPTURE_DIR="$output" CAPTURE_ROLLING=no USBCAN_ALLOW_NON_RUN_CAPTURE_DIR=yes \
+        "$ring_capture" > "$output/usb-capture.txt" 2>&1 & capture_pid=$!
+    critical_names[$capture_pid]=usb
     "$dimension_dir/01_bms_status.sh" > "$output/bms-status.txt" 2>&1 & dimension_pids+=("$!")
+    critical_names[$!]=bms
     "$dimension_dir/02_can_details.sh" "$output/can-details.jsonl" "$interval" & dimension_pids+=("$!")
+    critical_names[$!]=can-details
     "$dimension_dir/03_kernel_dmesg.sh" > "$output/dmesg-live.txt" 2>&1 & dimension_pids+=("$!")
+    critical_names[$!]=kernel
     "$dimension_dir/04_hpm_uart.sh" "$hpm_service" > "$output/hpm-uart-live.txt" 2>&1 & dimension_pids+=("$!")
+    critical_names[$!]=hpm
     "$dimension_dir/06_can_asc.sh" "$output" & dimension_pids+=("$!")
+    can_pid=$!
+    critical_names[$can_pid]=can
     INFERENCE_SCREEN_SESSION="$screen_session" "$dimension_dir/07_inference_screen.sh" "$output/inference-session.txt" & dimension_pids+=("$!")
     "$dimension_dir/08_thermal.sh" "$output/thermal.txt" "$interval" & dimension_pids+=("$!")
-
-    # Periodically flush can.asc and the ring pcap into the session dir so it
-    # stays usable mid-capture. Teardown still performs the full conversion
-    # and copy. FLUSH_INTERVAL_SECS=0 disables this.
-    if [[ $flush_interval =~ ^[0-9]+$ && $flush_interval -gt 0 && -x $flush_command ]]; then
-        "$flush_command" "$output" "$capture_dir" "$flush_interval" & dimension_pids+=("$!")
-    fi
+    critical_names[$!]=thermal
 
     if [[ $rotate_secs -gt 0 ]]; then
         ( sleep "$rotate_secs"; kill -USR1 $$ 2>/dev/null ) & rotate_timer_pid=$!
@@ -150,6 +153,15 @@ run_session() {
     # `wait` on a background job is interrupted promptly by a trapped
     # signal, unlike a foreground `sleep`.
     while [[ $stop_requested == no && $rotate_requested == no ]]; do
+        for pid in "${!critical_names[@]}"; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+                failed_child=${critical_names[$pid]}
+                echo "robopi-seven-capture: critical recorder exited: $failed_child (pid=$pid)" >&2
+                failure=1
+                break
+            fi
+        done
+        (( failure == 0 )) || break
         sleep 1 & wait $! 2>/dev/null || true
     done
 
@@ -158,20 +170,46 @@ run_session() {
         kill "$rotate_timer_pid" 2>/dev/null
         wait "$rotate_timer_pid" 2>/dev/null
     fi
-    [[ -n $capture_pid ]] && kill -INT "$capture_pid" 2>/dev/null
-    for pid in "${dimension_pids[@]}"; do kill "$pid" 2>/dev/null; done
-    wait 2>/dev/null
+    for pid in "$capture_pid" "${dimension_pids[@]}"; do
+        # systemd may signal the entire control group before this trap runs.
+        if [[ $stop_requested == yes && $failure == 0 ]]; then
+            signalled[$pid]=yes
+        fi
+        if kill -0 "$pid" 2>/dev/null; then
+            signalled[$pid]=yes
+            # Background jobs may inherit ignored SIGINT; TERM is handled
+            # by tcpdump and the CAN wrapper and flushes their buffers.
+            kill -TERM "$pid" 2>/dev/null
+        fi
+    done
+    # Preserve raw exit statuses, but distinguish requested shutdown from
+    # unexpected termination when deciding the service result.
+    printf 'recorder\tpid\texit_status\tshutdown_requested\n' > "$output/recorder-status.tsv"
+    for pid in "$capture_pid" "${dimension_pids[@]}"; do
+        local status=0
+        wait "$pid"; status=$?
+        [[ $pid != "$capture_pid" ]] || capture_status=$status
+        [[ $pid != "$can_pid" ]] || can_status=$status
+        printf '%s\t%s\t%s\t%s\n' "${critical_names[$pid]:-screen-setup}" "$pid" "$status" "${signalled[$pid]:-no}" >> "$output/recorder-status.tsv"
+        if [[ -n ${critical_names[$pid]:-} ]]; then
+            if [[ ${signalled[$pid]:-no} != yes ]] ||
+               [[ $status != 0 && $status != 130 && $status != 143 ]]; then
+                failure=1
+                [[ -n $failed_child ]] || failed_child=${critical_names[$pid]}
+            fi
+        fi
+    done
     screen -S "$screen_session" -X log off 2>/dev/null || true
-    "$dimension_dir/05_usb_pcap.sh" "$capture_dir" "$output"
     local end_unix
     end_unix=$(now)
     sed -i '$d' "$output/manifest.json"
-    printf ',  "ended_at_unix": %s,\n  "candump_status": %s,\n  "session_started_capture": true\n}\n' \
-        "$end_unix" "0" >> "$output/manifest.json"
+    printf ',  "ended_at_unix": %s,\n  "candump_status": %s,\n  "usb_capture_status": %s,\n  "capture_failed": %s,\n  "failed_recorder": "%s",\n  "asc_mode": "offline",\n  "pcap_mode": "direct-session",\n  "session_started_capture": true\n}\n' \
+        "$end_unix" "$can_status" "$capture_status" "$([[ $failure == 0 ]] && echo false || echo true)" "$failed_child" >> "$output/manifest.json"
     echo "Seven-dimensional capture written to $output"
     set -e
 
     rotate_requested=no
+    return "$failure"
 }
 
 output=$first_output

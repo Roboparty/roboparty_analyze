@@ -1,0 +1,305 @@
+#!/usr/bin/env bpftrace
+/* BUS DEV THRESHOLD_US IFINDEX (0 = all CAN interfaces) SECONDS.
+ * Requires bpftrace >= 0.27 and running-kernel/module BTF.
+ * No transmit, register writes or resets. Module qualification is required:
+ * can_raw:raw_rcv must not attach to the unrelated IPv4 raw_rcv.
+ * Function wall time includes preemption and nested calls; do not sum stages.
+ * Entry/return keys include task, function and nesting depth, not just CPU.
+ * Queue timing uses the same skb from successful enqueue return to delivery.
+ */
+BEGIN
+{
+    @capture_done = 0;
+    @capture_start_ns = nsecs;
+    printf("CAN_PATH_READY: bus=%d dev=%d threshold_us=%d ifindex=%d\n", $1, $2, $3, $4);
+    printf("Function wall times include scheduling/nested work. Slow lines are rate limited.\n");
+}
+
+interval:s:1
+{
+    if ((uint64)((int64)nsecs - (int64)@capture_start_ns) / 1000000000 >= $5) {
+        @capture_stop_ns = nsecs;
+        @capture_done = 1;
+        exit();
+    }
+}
+
+kprobe:gs_usb:gs_usb_receive_bulk_callback
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $u = (struct urb *)arg0;
+    if ($u->dev->bus->busnum == $1 && $u->dev->devnum == $2) {
+        $ndev = (struct net_device *)0;
+        $parent = (struct gs_usb *)$u->context;
+        $frame = (struct gs_host_frame *)$u->transfer_buffer;
+        if ($u->status == 0 && $u->actual_length >= 12 && $frame->channel < $parent->channel_cnt) {
+            $ndev = $parent->canch[$frame->channel]->netdev;
+        }
+        if ($4 == 0 || ($ndev != 0 && $ndev->ifindex == $4)) {
+            @calls[tid, func, $depth] = ($now, (uint64)$ndev, (uint64)$u, (uint64)0, cpu, (uint64)1, (uint64)0);
+            @usb_status[$u->status] = count();
+        }
+    }
+}
+
+kprobe:rockchip_canfd:rkcanfd_irq
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = ((struct rkcanfd_priv *)arg1)->ndev;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, (uint64)0, cpu, (uint64)2, $ndev->stats.rx_over_errors);
+    }
+}
+
+kprobe:can_dev:can_rx_offload_irq_finish,
+kprobe:can_dev:can_rx_offload_threaded_irq_finish
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $off = (struct can_rx_offload *)arg0;
+    $ndev = $off->dev;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @offload_napi[arg0 + offsetof(struct can_rx_offload, napi)] = $ndev->ifindex;
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, (uint64)$off, (uint64)0, cpu, (uint64)3, (uint64)0);
+        @irq_queue_max[$ndev->ifindex] = max($off->skb_irq_queue.qlen);
+        @ready_queue_max[$ndev->ifindex] = max($off->skb_queue.qlen);
+    }
+}
+
+kprobe:can_dev:can_rx_offload_napi_poll
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $napi = arg0;
+    $ndev = ((struct napi_struct *)arg0)->dev;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, $napi, arg1, cpu, (uint64)4, (uint64)0);
+        $ready = has_key(@napi_ready_ns, $napi) ? @napi_ready_ns[$napi] : 0;
+        if ($ready) {
+            $idx = $ndev->ifindex;
+            $us = (uint64)((int64)$now - (int64)$ready) / 1000;
+            @napi_wait_us[$idx] = hist($us);
+            @napi_wait_max_us[$idx] = max($us);
+            @napi_wait_pairs[$idx] = count();
+            if ($us >= $3) {
+                @napi_wait_slow[$idx] = count();
+                $sec = $now / 1000000000;
+                if (!has_key(@napi_last_print, $idx) || @napi_last_print[$idx] != $sec) {
+                    @napi_last_print[$idx] = $sec;
+                    printf("NAPI_WAIT iface=%s ifindex=%d scheduled_ns=%llu poll_ns=%llu wait_us=%llu cpu=%d tid=%d comm=%s\n",
+                           $ndev->name, $idx, $ready, $now, $us, cpu, tid, comm);
+                }
+            }
+            $deleted = delete(@napi_ready_ns, $napi);
+        } else {
+            // Budget repolls need not call __napi_schedule again.
+            @napi_without_schedule[$ndev->ifindex] = count();
+        }
+    }
+}
+
+kprobe:can:can_receive
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = (struct net_device *)arg1;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, (uint64)0, cpu, (uint64)5, (uint64)0);
+    }
+}
+
+kprobe:can_raw:raw_rcv
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = ((struct sk_buff *)arg0)->dev;
+    if ($ndev != 0 && ($4 == 0 || $ndev->ifindex == $4)) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, arg1, cpu, (uint64)6, (uint64)0);
+    }
+}
+
+kprobe:sock_queue_rcv_skb_reason
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = ((struct sk_buff *)arg1)->dev;
+    // ARPHRD_CAN=280. skb->dev is cleared inside this function; save it now.
+    if ($ndev != 0 && $ndev->type == 280 && ($4 == 0 || $ndev->ifindex == $4)) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, arg1, cpu, (uint64)7, (uint64)0);
+    }
+}
+
+kprobe:can_dev:can_rx_offload_queue_timestamp
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = ((struct can_rx_offload *)arg0)->dev;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, arg1, cpu, (uint64)8, (uint64)0);
+    }
+}
+
+kprobe:can_dev:can_rx_offload_queue_tail
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] + 1 : 1;
+    @depth[tid, func] = $depth;
+    $ndev = ((struct can_rx_offload *)arg0)->dev;
+    if ($4 == 0 || $ndev->ifindex == $4) {
+        @calls[tid, func, $depth] = ($now, (uint64)$ndev, arg0, arg1, cpu, (uint64)8, (uint64)0);
+    }
+}
+
+kretprobe:gs_usb:gs_usb_receive_bulk_callback,
+kretprobe:rockchip_canfd:rkcanfd_irq,
+kretprobe:can_dev:can_rx_offload_irq_finish,
+kretprobe:can_dev:can_rx_offload_threaded_irq_finish,
+kretprobe:can_dev:can_rx_offload_napi_poll,
+kretprobe:can:can_receive,
+kretprobe:can_raw:raw_rcv,
+kretprobe:sock_queue_rcv_skb_reason,
+kretprobe:can_dev:can_rx_offload_queue_timestamp,
+kretprobe:can_dev:can_rx_offload_queue_tail
+/!@capture_done/
+{
+    $now = nsecs;
+    $depth = has_key(@depth, (tid, func)) ? @depth[tid, func] : 0;
+    if ($depth) {
+        let $call;
+        if (find(@calls, (tid, func, $depth), $call)) {
+            $ndev = (struct net_device *)$call.1;
+            $idx = 0;
+            $name = "usb-unmapped";
+            if ($ndev != 0) { $idx = $ndev->ifindex; $name = $ndev->name; }
+            @ifname[$idx] = $name;
+            $us = (uint64)((int64)$now - (int64)$call.0) / 1000;
+            @function_us[func, $idx] = hist($us);
+            @function_max_us[func, $idx] = max($us);
+            @function_pairs[func, $idx] = count();
+            if ($us >= $3) {
+                @function_slow[func, $idx] = count();
+                $sec = $now / 1000000000;
+                if (!has_key(@function_last_print, (func, $idx)) || @function_last_print[func, $idx] != $sec) {
+                    @function_last_print[func, $idx] = $sec;
+                    printf("PATH_SLOW fn=%s iface=%s ifindex=%d start_ns=%llu end_ns=%llu wall_us=%llu cpu=%d->%d tid=%d comm=%s\n",
+                           func, $name, $idx, $call.0, $now, $us, $call.4, cpu, tid, comm);
+                }
+            }
+            if ($call.5 == 2) {
+                $over = $ndev->stats.rx_over_errors;
+                if ($over > $call.6) {
+                    $delta = (int64)$over - (int64)$call.6;
+                    @native_fifo_overruns[$idx] = sum($delta);
+                    $sec = $now / 1000000000;
+                    if (!has_key(@overflow_last_print, $idx) || @overflow_last_print[$idx] != $sec) {
+                        @overflow_last_print[$idx] = $sec;
+                        printf("CAN_OVERFLOW iface=%s irq_start_ns=%llu irq_end_ns=%llu events=%llu\n",
+                               $name, $call.0, $now, $delta);
+                    }
+                }
+            }
+            if ($call.5 == 4) {
+                @napi_work_done[$idx] = hist(retval);
+                if (retval >= $call.3) { @napi_budget_exhausted[$idx] = count(); }
+            }
+            if ($call.5 == 7 && retval != 0) {
+                @socket_drop_reason[$idx, retval] = count();
+            }
+            if ($call.5 == 8) {
+                if ((int64)retval == 0) {
+                    if (has_key(@queued_ns, $call.3)) { @queue_pointer_reused[$idx] = count(); }
+                    @queued_ifindex[$call.3] = $idx;
+                    @queued_ns[$call.3] = $now;
+                    @queue_success[$idx] = count();
+                } else {
+                    @queue_errors[$idx, (int64)(int32)retval] = count();
+                }
+            }
+            $deleted = delete(@calls, (tid, func, $depth));
+        }
+        if ($depth == 1) { $deleted = delete(@depth, (tid, func)); }
+        else { @depth[tid, func] = $depth - 1; }
+    } else {
+        @return_without_entry[func] = count();
+    }
+}
+
+kprobe:__napi_schedule
+/!@capture_done/
+{
+    $now = nsecs;
+    // Learn exact offload NAPI objects before irq_finish schedules them.
+    $idx = has_key(@offload_napi, arg0) ? @offload_napi[arg0] : 0;
+    if ($idx) {
+        if (!has_key(@napi_ready_ns, arg0)) { @napi_ready_ns[arg0] = $now; }
+        else { @repeated_napi_schedule[$idx] = count(); }
+        @napi_schedules[$idx] = count();
+    }
+}
+
+kprobe:netif_receive_skb
+/!@capture_done/
+{
+    $now = nsecs;
+    $start = has_key(@queued_ns, arg0) ? @queued_ns[arg0] : 0;
+    if ($start) {
+        $idx = @queued_ifindex[arg0];
+        $us = (uint64)((int64)$now - (int64)$start) / 1000;
+        @queue_to_delivery_us[$idx] = hist($us);
+        @queue_to_delivery_max_us[$idx] = max($us);
+        @queue_delivered[$idx] = count();
+        if ($us >= $3) {
+            @queue_slow[$idx] = count();
+            $sec = $now / 1000000000;
+            if (!has_key(@queue_last_print, $idx) || @queue_last_print[$idx] != $sec) {
+                @queue_last_print[$idx] = $sec;
+                printf("CAN_QUEUE_WAIT ifindex=%d skb=0x%lx enqueued_ns=%llu delivered_ns=%llu wait_us=%llu cpu=%d tid=%d\n",
+                       $idx, arg0, $start, $now, $us, cpu, tid);
+            }
+        }
+        $deleted = delete(@queued_ns, arg0);
+        $deleted = delete(@queued_ifindex, arg0);
+    }
+}
+
+tracepoint:skb:kfree_skb
+/!@capture_done/
+{
+    $skb = (uint64)args->skbaddr;
+    if (has_key(@queued_ns, $skb)) {
+        @queued_freed[@queued_ifindex[$skb], args->reason] = count();
+        $deleted = delete(@queued_ns, $skb);
+        $deleted = delete(@queued_ifindex, $skb);
+    }
+}
+
+END
+{
+    @end_ns = nsecs;
+    printf("CAN_PATH_FINAL: maps are per function/ifindex; ifname maps indices to names.\n");
+    printf("Pending calls/queued_ns/napi_ready_ns may be capture boundaries, not hangs.\n");
+    printf("No samples for a stage means unverified, not zero latency.\n");
+    clear(@function_last_print);
+    clear(@napi_last_print);
+    clear(@queue_last_print);
+    clear(@overflow_last_print);
+}

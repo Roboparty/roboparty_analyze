@@ -9,7 +9,7 @@ FILE_COUNT=8
 # a full capture (the old /var/log/robopi default is a 47MB zram tmpfs).
 SESSION_ROOT=/home/robo/robopi-logs
 
-# Session cleanup, run before each new capture starts: sessions older than
+# Session cleanup, run before each new capture starts and every 20 seconds: sessions older than
 # SESSION_RETENTION_DAYS are removed; beyond that, sessions are removed
 # newest-first-protected/oldest-first-evicted once their combined size
 # would exceed SESSION_MAX_TOTAL_MB. Sizing the second rule directly in
@@ -17,7 +17,12 @@ SESSION_ROOT=/home/robo/robopi-logs
 # fast sessions are produced, e.g. once SESSION_MAX_DURATION_SECS rotation
 # is in play.
 SESSION_RETENTION_DAYS=7
-SESSION_MAX_TOTAL_MB=8000
+SESSION_MAX_TOTAL_MB=6000
+
+# Rotate oversized active sessions via SIGUSR1 to the capture orchestrator.
+# This is a soft bound: allow for one check interval and teardown conversion.
+# The active session is never deleted; completed sessions are evicted first.
+SESSION_MAX_SIZE_MB=1024
 
 # Auto-rotate a running capture into a fresh session after this many
 # seconds, so no single session's files can grow unbounded during a long
@@ -28,8 +33,7 @@ SESSION_MAX_DURATION_SECS=1800
 # Max seconds to wait for CAN_INTERFACE before giving up on the ring capture.
 USBCAN_CAN_WAIT_SECS=120
 
-# Flush interval: how often (seconds) can.asc and the ring pcap get their
-# incremental updates written into the session dir. 0 disables flushing
-# (falls back to teardown-only).
-FLUSH_INTERVAL_SECS=10
+# Seven-dimensional capture writes PCAP segments directly into each session.
+# FILE_COUNT bounds the standalone /run ring only; session size and retention
+# are controlled by the guard above. ASC conversion is explicitly offline.
 
