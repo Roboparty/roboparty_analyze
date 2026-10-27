@@ -1,6 +1,6 @@
 [Unit]
 Description=RoboPi seven-dimensional communication recorder
-Documentation=file:/usr/share/doc/robopi-analyze/README.md
+Documentation=file:/usr/share/doc/roboparty-analyze/README.md
 After=local-fs.target systemd-modules-load.service hpm-log-capture.service
 Wants=hpm-log-capture.service
 StartLimitIntervalSec=0
@@ -15,14 +15,12 @@ ExecStart=/opt/roboparty/bin/robopi-seven-capture
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT
-# Teardown runs a full log2asc conversion over the whole can.log; on a long
-# high-traffic session that alone can exceed 30s, and being killed mid-way
-# leaves manifest.json without ended_at_unix.
+# Allow recorders to flush their final buffers and finalize the manifest.
 TimeoutStopSec=300
 Nice=15
 IOSchedulingClass=idle
 CPUSchedulingPolicy=batch
-CPUAffinity=0 1
+CPUAffinity=2 3
 UMask=0027
 
 [Install]

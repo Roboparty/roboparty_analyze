@@ -1,0 +1,10 @@
+[Unit]
+Description=Check communication capture storage every 20 seconds
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=20
+Unit=robopi-session-guard.service
+
+[Install]
+WantedBy=timers.target

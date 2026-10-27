@@ -1,0 +1,54 @@
+CAN shared receive path: board verification, 2026-10-21
+
+Files: run-can-path.sh, trace-can-path.bt
+Board installation: /root/ebpf/
+Command: bash /root/ebpf/run-can-path.sh 5 5000
+Result: exit 0; 26 probes attached; CAN_PATH_FINAL present.
+Log directory (UTC): results/can-path-20261021T142719Z-PZg2lQ/
+Kernel: 6.18.58-current-rockchip64, PREEMPT_RT, ARM64
+Tool: /root/ebpf/bin/bpftrace v0.27.0; system bpftrace unchanged.
+
+Observed interface: can_hipnuc, ifindex 4
+Capture clock: start=12832999749100 ns, stop=12837999952032 ns
+The requested five-second window includes probe attachment boundaries.
+Entry/return probes attach separately; boundary counts need not agree.
+
+Function                         Paired samples    Maximum wall time (us)
+rkcanfd_irq                      1996              83
+can_rx_offload_queue_timestamp   1999              10
+can_rx_offload_irq_finish        1996              20
+can_rx_offload_napi_poll         1995              306
+can_receive                      1996              113
+can_raw:raw_rcv                  3992              91
+sock_queue_rcv_skb_reason        3992              82
+
+NAPI schedule-to-poll: 1995 pairs, maximum 72 us.
+Same-SKB offload queue-to-delivery: 1999 pairs, maximum 98 us.
+Successful enqueue count and delivery count both 1999.
+No socket drop reasons, native FIFO overrun increments, helper warnings,
+compiler warnings, or lost-event messages were recorded in this run.
+Return-without-entry counters were nonzero (4-8 per function); startup
+boundaries are a candidate, and these counters must remain visible.
+Different stages overlap and their durations must not be summed.
+
+USB CAN interfaces can0..can3 were DOWN. The gs_usb bulk callback,
+queue_tail and threaded_irq_finish probes had no traffic samples.
+Attachment alone does not validate those paths. No CAN traffic was injected.
+This short baseline did not reproduce or rule out the earlier 906 ms stall.
+Tracing overhead has not been benchmarked.
+
+Shutdown observation: the tracer waited in synchronize_rcu_tasks_trace()
+via perf_event_detach_bpf_prog(). This caused earlier short outer timeouts
+to kill the tracer before its summary. The current version stops collection
+with an internal timer, freezes maps, and allows an additional 90 seconds
+for compilation/attachment/shutdown before the watchdog reports failure.
+This diagnostic teardown wait is not proof of the earlier communication
+stall's cause. The final run exited normally with no new tracer remaining.
+
+Checks: bash -n passed; local/board script SHA256 matched.
+013402d936530e666ee365f1148a246e1fee1ca1cd2463790313b3d4fa559244  run-can-path.sh
+46304d9e96d511c89418453656b2560d16cfc891e563d0e75503277b346f2bde  trace-can-path.bt
+
+Earlier can-path-20261021T142543Z-mDig6w was a development run without
+the capture freeze; its samples include staggered probe teardown windows.
+Use the final run above when checking the current version.

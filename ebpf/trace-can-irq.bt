@@ -1,0 +1,117 @@
+#!/usr/bin/env bpftrace
+/* CAN_IRQ_TID USB_IRQ_TID THRESHOLD_US ITERATIONS_ENABLED.
+ * Requires PREEMPT_RT IRQ threads.
+ * Wall time includes descheduling; oncpu_est_us subtracts observed off-CPU
+ * intervals, but still includes hard IRQ/NMI interference and probe overhead.
+ */
+BEGIN
+{
+    @iteration_probe_enabled = $4;
+    printf("CAN_IRQ_TID=%d USB_IRQ_TID=%d threshold_us=%d\n", $1, $2, $3);
+    printf("CAN_IRQ_READY: elapsed uses nsecs; slow events limited per kind/TID/second.\n");
+}
+
+kprobe:rkcanfd_handle_rx_int
+/tid == $1/
+{
+    if (@can_start[tid]) { @can_entry_collision = count(); }
+    @can_start[tid] = nsecs;
+    @can_off_ns[tid] = (uint64)0;
+    @loop_count[tid] = (uint64)0;
+    @can_calls = count();
+}
+
+kretprobe:rkcanfd_handle_rx_int
+/tid == $1 && @can_start[tid]/
+{
+    $now = nsecs;
+    $wall_ns = $now - @can_start[tid];
+    $off_ns = @can_off_ns[tid];
+    $us = $wall_ns / 1000;
+    @can_wall_us = hist($us);
+    @can_wall_max_us = max($us);
+    @can_offcpu_us = hist($off_ns / 1000);
+    @can_returns = count();
+    @can_seen = 1;
+    if (@iteration_probe_enabled) {
+        @can_iterations = hist(@loop_count[tid]);
+        @can_iterations_max = max(@loop_count[tid]);
+    }
+    if ($off_ns <= $wall_ns) {
+        @can_oncpu_est_us = hist(($wall_ns - $off_ns) / 1000);
+    } else { @can_accounting_errors = count(); }
+    if ($us >= $3) {
+        @can_slow = count();
+        $sec = $now / 1000000000;
+        if (@can_last_print != $sec) {
+            @can_last_print = $sec;
+            printf("CAN_SLOW start_ns=%llu end_ns=%llu wall_us=%llu offcpu_us=%llu iterations=%llu iter_enabled=%d cpu=%d tid=%d ret=%lld\n",
+                   @can_start[tid], $now, $us, $off_ns / 1000,
+                   @loop_count[tid], @iteration_probe_enabled, cpu, tid, (int64)retval);
+        }
+    }
+    delete(@can_start[tid]);
+    delete(@can_off_ns[tid]);
+    delete(@loop_count[tid]);
+}
+
+tracepoint:sched:sched_wakeup
+/args->pid == $1 || args->pid == $2/
+{
+    // Do not replace the earliest pending ready time with repeated wakeups.
+    if (!@ready_ns[args->pid]) { @ready_ns[args->pid] = nsecs; }
+    @wakeups[args->pid] = count();
+}
+
+tracepoint:sched:sched_switch
+/args->prev_pid == $1 || args->prev_pid == $2 || args->next_pid == $1 || args->next_pid == $2/
+{
+    $now = nsecs;
+    $prev = args->prev_pid;
+    $next = args->next_pid;
+    if ($prev == $1 || $prev == $2) {
+        @switch_out[$prev] = count();
+        if (@can_start[$prev]) { @off_start[$prev] = $now; }
+        // TASK_RUNNING=0; tracepoints encode preemption with TASK_REPORT_MAX.
+        // sched_wakeup will start the wait for a sleeping task instead.
+        if (args->prev_state == 0 || args->prev_state == 256) {
+            if (!@ready_ns[$prev]) { @ready_ns[$prev] = $now; }
+        }
+    }
+    if ($next == $1 || $next == $2) {
+        @switch_in[$next] = count();
+        if (@off_start[$next]) {
+            if (@can_start[$next]) {
+                @can_off_ns[$next] += ($now - @off_start[$next]);
+            }
+            delete(@off_start[$next]);
+        }
+        $ready = @ready_ns[$next];
+        if ($ready) {
+            $us = ($now - $ready) / 1000;
+            @irq_ready_wait_us[$next] = hist($us);
+            @irq_ready_wait_max_us[$next] = max($us);
+            if ($us >= $3) {
+                @irq_ready_slow[$next] = count();
+                $sec = $now / 1000000000;
+                if (@sched_last_print[$next] != $sec) {
+                    @sched_last_print[$next] = $sec;
+                    printf("IRQ_WAIT ready_ns=%llu run_ns=%llu wait_us=%llu tid=%d cpu=%d previous_tid=%d previous_comm=%s\n",
+                           $ready, $now, $us, $next, cpu, $prev, args->prev_comm);
+                }
+            }
+            delete(@ready_ns[$next]);
+        }
+    }
+}
+
+END
+{
+    @end_ns = nsecs;
+    printf("CAN_IRQ_FINAL: pending can_start/ready_ns are boundary samples, not proof of a hang.\n");
+    if (!@can_seen) {
+        printf("NO_CAN_SAMPLES: no paired CAN RX calls; do not interpret as healthy.\n");
+    }
+    clear(@can_last_print);
+    clear(@sched_last_print);
+}

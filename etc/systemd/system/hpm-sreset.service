@@ -1,6 +1,6 @@
 [Unit]
 Description=RoboPi HPM USB presence monitor and reset
-Documentation=file:/usr/share/doc/robopi-analyze/README.md
+Documentation=file:/usr/share/doc/roboparty-analyze/README.md
 After=local-fs.target systemd-modules-load.service
 
 [Service]

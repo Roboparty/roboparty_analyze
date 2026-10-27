@@ -1,0 +1,95 @@
+CPU0 flight recorder verification - 2026-10-23 CST
+
+Target: robopi2, aarch64, Linux 6.18.58-current-rockchip64, PREEMPT_RT.
+USB bus 3, IRQ 77 / TID 173; can_hipnuc IRQ 123 / TID 630.
+Both target IRQ threads were already restricted to CPU0.
+Tool: /root/ebpf/bin/bpftrace 0.27.0; system bpftrace 0.20 is unsuitable.
+No body/hand workload was started. No CAN transmission was requested.
+
+Checks completed:
+- Eight offline tests: wrap/sequence integrity, missing policy, diagnostics,
+  FINAL marker, trigger/switch timestamp identity, residency clipping,
+  pre/post banks and generated optional probes.
+- Board codegen-only compilation before attachment.
+- Timed freeze, manual dump and automatic IRQ-ready threshold trigger.
+- Real systemd installation, captured state, restart to unarmed readiness.
+- start_800hz_test.sh --check: CONFIG_OK, RECEIVER_OK, MONITOR_CPU_OK,
+  PRECHECK_OK. It did not launch a workload.
+- Debian binary package build completed; new recorder and service included.
+  Deployment copied only recorder files/service and the startup script.
+  The complete package was not installed, avoiding unrelated service changes.
+- Local and deployed recorder/generator/startup SHA256 matched.
+
+Automatic trigger test:
+  /home/robo/ebpf/results/cpu0-validation/
+    cpu0-flight-20261022T183405Z-1107185
+  Test threshold was 1 us, solely to exercise the trigger while idle.
+  Target TID 630, ready_ns=21113597839068, switch_ns=21113597861817.
+  Measured wait: 22.749 us. This is NOT the historical 34.545 ms incident.
+  valid_export=true, errors=[], wait_start_covered=true.
+  Trigger timestamp equals the target sched_switch timestamp.
+  IPI events present. Re-decoded successfully with final integrity checks.
+
+Final deployed service manual dump, with wrapped 8192-slot rings:
+  /home/robo/ebpf/results/cpu0-flight-20261022T183646Z-1116424
+  valid_export=true, errors=[], then service reached captured state.
+  Downloaded to /home/robo/roboparty_repo/test/ with the same directory name.
+  Original pre-integration board startup script backup:
+  /home/robo/standing-test-20261021/cpu0-prep-20261023-Wh9PbD/
+
+Short idle overhead observation (mpstat -P 0, four 2-second samples):
+  Without this recorder: CPU0 idle 93.89%, busy 6.11%.
+  With this recorder ready/unarmed: idle 93.02%, busy 6.98%.
+  Existing long eBPF/resource/log collectors stayed active in both samples.
+  These are short, sequential, uncontrolled observations, not a statistical
+  overhead bound. SSH/precheck/background activity affects the samples.
+
+Initial validation limitations before the kernel update:
+- The running kernel lacks preemptirq events and IRQSOFF/PREEMPT tracers.
+  preemptirq_available=false; a rebuilt/booted kernel is still necessary.
+  cpu0-trace-kernel.config records the required configuration, not a flashed
+  or validated replacement kernel.
+- No active USB-CAN receive traffic was induced. USB probes attached but
+  their data-path timing under 800 Hz traffic remains unvalidated.
+- perf/BPF kretprobes were not listed in kprobe_profile. Missed return probes
+  have NOT been ruled out (kretprobe_missed_verified=false).
+- Capacity is bounded by records, not seconds. Only common retained windows
+  can be compared. One completed trigger is preserved; there is no automatic
+  re-arm during a workload. Actual load and 4-5 hour stability are untested.
+- Early development captures failed on compiler diagnostics or export timeout.
+  They remain marked invalid. Final capture uses line-buffered JSON and a
+  shared entry timestamp for switch records and trigger evaluation.
+
+Post-reboot verification - 2026-10-23 CST:
+  Boot ID e66f7acd-84f9-4d39-ba21-4eb389a8e49a.
+  Image build D68f5-P3e82-C0539-Hfb2e; DTB not replaced.
+  Four preemptirq events present, PREEMPT_RT preserved, restart parameter Y.
+  HPM now USB bus 1, IRQ 77 / TID 170; IMU IRQ 122 / TID 646.
+  USB CAN0-3 ERROR-ACTIVE, 1M/5M, restart-ms 100; IMU ERROR-ACTIVE.
+
+  The events use signed caller_offs/parent_offs relative to _stext.
+  Recording every toggle into BPF maps increased short-sample CPU0 busy
+  from 9.30% to 48.87%; this path was rejected for motion testing.
+  High-rate events now use a private CPU0 32 MiB tracefs ring, mono clock,
+  with 1 us formatted timestamp resolution and symbolic caller/parent.
+  Other scheduling/IRQ/function probes retain bounded BPF maps.
+  The native ring freezes in userspace after the BPF frozen marker;
+  it does not have BPF's immediate pre/post bank separation guarantee.
+  Its retained window must independently cover the target wait.
+  A short native+BPF idle sample measured CPU0 busy 13.29%; these sequential
+  samples are not a controlled overhead bound or 800 Hz qualification.
+
+  Automatic trigger capture (threshold 1 us for functional testing only):
+  /home/robo/ebpf/results/cpu0-validation/cpu0-flight-20261022T191134Z-35385
+  BPF trigger_ready=642426562743, trigger_ns=642426600950, target TID 646.
+  Native retained timestamps: 637243488000 through 642824138000 ns.
+  Both BPF and native wait_start_covered=true; valid_export=true, errors=[].
+  Native counts: 286175 preempt_disable, 286175 preempt_enable,
+                 106822 irq_disable, 106822 irq_enable.
+  Native overrun=0, commit overrun=0, dropped events=0, malformed lines=0.
+  Toggle pairing spans are not proof of continuous non-preemptible execution;
+  correlate task switches and nested IRQs. Boundary pairs can be incomplete.
+  Native instance was removed after export. Nine offline tests passed.
+  Capture downloaded to /home/robo/roboparty_repo/test/ under the same name.
+  No motor workload was started; loaded overhead and long-run stability
+  remain untested. Kretprobe missed-event verification is still unavailable.

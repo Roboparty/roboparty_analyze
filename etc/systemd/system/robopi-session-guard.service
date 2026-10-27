@@ -1,0 +1,12 @@
+[Unit]
+Description=Bound communication capture storage and rotate oversized sessions
+After=usbcan-capture.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/usbcan-capture
+ExecStart=/opt/roboparty/bin/robopi-session-guard
+Nice=15
+IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
+CPUAffinity=2 3

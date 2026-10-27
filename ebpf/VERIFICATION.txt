@@ -1,0 +1,56 @@
+USB giveback tracer: board verification, 2026-10-21
+
+Run on board:
+  bash /root/ebpf/run-usb-giveback.sh 120 5000
+Arguments: duration in seconds, slow threshold in microseconds.
+The wrapper requires exactly one USB 1209:2323 device and detects its current
+bus/device numbers. Logs go into /root/ebpf/results (override with OUTPUT_DIR).
+Exit codes: 0 = completed with paired samples; 2 = no paired samples;
+other nonzero codes indicate a setup, tracing, or logging error.
+
+Board identity:
+  Serial: 5659330c9e32c075
+  Boot ID: 80ea4b26-0560-44b3-a486-415d1e4dd6a9
+  Kernel: 6.18.58-current-rockchip64, PREEMPT_RT, 2026-10-21 build
+  bpftrace: 0.20.2 (ARM64)
+  USB: 002:015, /sys/devices/platform/fc800000.usb/usb2/2-1/2-1.1
+  Driver: gs_usb; host controller: ehci-platform
+
+Results (timestamps in filenames are UTC):
+  usb-giveback-20261021T134151Z-uyFgl3.log
+    30 seconds, threshold 5000 us, ten read-only lsusb descriptor queries.
+    Endpoint 0: 40 T1 events, 40 matched T2 events, max delay 24 us.
+    No samples >= 5000 us; no pending or duplicate T1 entries at exit.
+    Wrapper exit code: 0.
+  usb-giveback-20261021T134254Z-prqA5p.log
+    15 seconds, threshold deliberately lowered to 1 us, one descriptor query.
+    Endpoint 0: 4 paired completions; all 4 counted as above threshold.
+    Rate-limited SLOW output worked; one observed T2 context was
+    irq/77-ehci_hcd (TID 165), CPU 0. This IRQ number is not a stable identity.
+    Wrapper exit code: 0.
+  usb-giveback-20261021T134323Z-GlzrKl.log
+    5 seconds without generated USB requests: no pairs.
+    Wrapper printed a no-samples warning and returned code 2 as intended.
+
+Scope:
+  These are control-endpoint tests of the tracer, not bulk CAN load tests.
+  can0..can3 remained DOWN. No motor commands or CAN frames were generated.
+  This does not reproduce or rule out the earlier 906 ms stall.
+  T1 is usb_hcd_giveback_urb entry, before actual list insertion.
+  T2 is __usb_hcd_giveback_urb entry, before usbmon C and driver callback.
+  T2-T1 includes locking, queueing, earlier callbacks and dispatch delays;
+  it is not pure scheduler latency or USB wire transfer time.
+  The script uses bpftrace's default nsecs clock; do not subtract wall-clock
+  usbmon timestamps directly. Tracing overhead was not benchmarked.
+  Unmatched T1 entries at shutdown can include ordinary in-flight requests.
+  No data was collected from bulk endpoints 0x81/0x02 during these tests.
+
+Checks:
+  bash -n passed. Both kprobes compiled, loaded and executed on the board.
+  Local and board script SHA256 values matched.
+  dpkg --audit produced no output. No bpftrace process remained after tests.
+  Scripts are plain diagnostic files; no Debian package was built.
+
+Script SHA256:
+  7930f72f1bcc2c72efa1895a6f6cb6993e4a90cd5804e5d475a408fe676d759b trace-usb-giveback.bt
+  ce4a080f3df120f83129f95fe799d30fa5fe028996208246ca5a03a7b34f9dc1 run-usb-giveback.sh

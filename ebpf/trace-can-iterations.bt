@@ -1,0 +1,8 @@
+/* Optional: append to trace-can-irq.bt only if this exact symbol is probeable.
+ * One extra probe per FIFO read. Keep disabled for the first baseline run.
+ */
+kprobe:rkcanfd_handle_rx_int_one
+/tid == $1 && @can_start[tid]/
+{
+    @loop_count[tid] += 1;
+}

@@ -1,6 +1,6 @@
 [Unit]
 Description=RoboPi HPM UART log capture
-Documentation=file:/usr/share/doc/robopi-analyze/README.md
+Documentation=file:/usr/share/doc/roboparty-analyze/README.md
 
 [Service]
 Type=simple
@@ -11,6 +11,7 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hpm-uart
+CPUAffinity=2 3
 
 [Install]
 WantedBy=multi-user.target

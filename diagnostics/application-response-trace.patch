@@ -1,0 +1,272 @@
+--- a/src/motors/src/drivers/lro/lro_motor_driver.cpp
++++ b/src/motors/src/drivers/lro/lro_motor_driver.cpp
+@@ -3,6 +3,7 @@
+ // Copyright (C) 2026 Luo1imasi
+ 
+ #include "lro_motor_driver.hpp"
++#include <net/if.h>
+ 
+ LRO_Limit_Param lro_limit_param[LRO_Num_Of_Motor] = {
+     {12.5, 21.0, 36.0, 500.0, 50.0},  // LRO_PJ2_55_5550
+@@ -20,6 +21,8 @@
+     motor_id_ = motor_id;
+     limit_param_ = lro_limit_param[motor_model_];
+     can_interface_ = can_interface;
++    (void)motor_response_trace::recorder();
++    response_count_.identify(this, if_nametoindex(can_interface.c_str()), motor_id);
+     motor_zero_offset_ = motor_zero_offset;
+ 
+     if (interface_type == "canfd" || interface_type == "ethercanfd") {
+--- a/src/motors/src/drivers/lro/lro_motor_driver.hpp
++++ b/src/motors/src/drivers/lro/lro_motor_driver.hpp
+@@ -9,6 +9,7 @@
+ #include <string>
+ 
+ #include "motor_driver.hpp"
++#include "motor_response_trace.hpp"
+ #include "protocol/canfd_iso.hpp"
+ // #include "protocol/ethercat_iso.hpp"
+ #include "utils.hpp"
+@@ -152,7 +153,7 @@
+ 
+     // std::atomic<float> dc_bus_voltage_{0.f};
+     // std::atomic<float> dc_bus_current_{0.f};
+-    std::atomic<int> response_count_{0};
++    motor_response_trace::Counter response_count_{0};
+     LRO_Motor_Model motor_model_;
+     LRO_Limit_Param limit_param_;
+     std::atomic<uint8_t> mos_temperature_{0};
+--- a/src/motors/src/protocol/canfd/socket_canfd.cpp
++++ b/src/motors/src/protocol/canfd/socket_canfd.cpp
+@@ -9,6 +9,7 @@
+  */
+ 
+ #include "socket_canfd.hpp"
++#include "motor_response_trace.hpp"
+ 
+ #include <cerrno>
+ #include <cctype>
+@@ -40,6 +41,7 @@
+ MotorsSocketCANFD::~MotorsSocketCANFD() { this->close(); }
+ 
+ void MotorsSocketCANFD::open(const std::string& interface) {
++    (void)motor_response_trace::recorder();
+     sockfd_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+     if (sockfd_ == FD_INIT_FD) {
+         logger_->error("Failed to create CAN socket");
+@@ -142,6 +144,13 @@
+                     if (len == 0){
+                         break;
+                     }
++                    auto& trace = motor_response_trace::recorder();
++                    if (trace.enabled) {
++                        uint64_t payload = 0;
++                        if (len >= 16) memcpy(&payload, rx_frame.data, sizeof(payload));
++                        trace.emit(motor_response_trace::SocketRead, this, addr_.can_ifindex,
++                                   rx_frame.can_id, sockfd_, len, rx_frame.len, payload);
++                    }
+                     CanFdCbkFunc callback_to_run;
+                     {
+                         std::lock_guard<std::mutex> lock(canfd_callback_mutex_);
+@@ -198,6 +207,13 @@
+                 count += 1;
+                 std::this_thread::sleep_for(std::chrono::microseconds(1000));
+             }
++            auto& trace = motor_response_trace::recorder();
++            if (trace.enabled) {
++                uint64_t payload = 0;
++                memcpy(&payload, tx_frame.data, sizeof(payload));
++                trace.emit(motor_response_trace::SocketWrite, this, addr_.can_ifindex,
++                           tx_frame.can_id, sockfd_, written, written < 0 ? errno : 0, payload);
++            }
+             if (written < 0) {
+                 logger_->error("Failed to transmit CAN-FD frame");
+             } else if (send_sleep_us_ > 0) {
+@@ -236,6 +252,13 @@
+             return;
+         }
+         queued = tx_queue_.bounded_push(frame);
++        auto& trace = motor_response_trace::recorder();
++        if (trace.enabled) {
++            uint64_t payload = 0;
++            memcpy(&payload, frame.data, sizeof(payload));
++            trace.emit(motor_response_trace::TxQueue, this, addr_.can_ifindex,
++                       frame.can_id, sockfd_, queued, frame.len, payload);
++        }
+     }
+     if (!queued) {
+         logger_->error("CAN-FD transmit queue on {} is full; dropping frame 0x{:X}",
+--- a/src/inference/src/robot_interface.cpp
++++ b/src/inference/src/robot_interface.cpp
+@@ -2,6 +2,7 @@
+ // Copyright (C) 2025-2026 Luo1imasi
+ 
+ #include "robot_interface.hpp"
++#include "motor_response_trace.hpp"
+ 
+ #include <array>
+ #include <cmath>
+@@ -449,6 +450,9 @@
+                           "(count=" + std::to_string(response_count) + ")";
+     }
+     if (!offline_motors.empty()) {
++        auto& trace = motor_response_trace::recorder();
++        trace.emit(motor_response_trace::Fault, this, 0, 0, 0, 0, offline_threshold_);
++        trace.freeze();
+         throw std::runtime_error("Motors offline: " + offline_motors);
+     }
+ }
+--- /dev/null
++++ b/src/motors/include/motor_response_trace.hpp
+@@ -0,0 +1,151 @@
++#pragma once
++
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <cstdio>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <memory>
++#include <pthread.h>
++#include <sched.h>
++#include <stdexcept>
++#include <sys/syscall.h>
++#include <time.h>
++#include <thread>
++#include <unistd.h>
++
++// Opt-in diagnostics. Each producer owns a ring; only the dump worker does I/O.
++namespace motor_response_trace {
++inline uint64_t now_ns() {
++    timespec ts{};
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return uint64_t(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
++}
++enum Kind { Increment = 1, Clear, Check, SocketRead, TxQueue, SocketWrite, Fault };
++struct Event {
++    uint64_t start_ns, end_ns, object, payload;
++    int tid, cpu, kind, iface, id, before, after, detail;
++};
++class Recorder {
++    static constexpr unsigned Slots = 32, Capacity = 32768;
++    struct Ring {
++        std::atomic<bool> writing{false};
++        uint64_t count = 0;
++        std::array<Event, Capacity> events{};
++    };
++    std::unique_ptr<Ring[]> rings_;
++    std::atomic<unsigned> claimed_{0};
++    std::atomic<uint64_t> dropped_{0};
++    std::atomic<bool> frozen_{false}, stop_{false}, dumped_{false};
++    std::thread worker_;
++    FILE* file_ = nullptr;
++
++    void dump() {
++        if (dumped_.exchange(true)) return;
++        for (unsigned i = 0; i < Slots; ++i) {
++            while (rings_[i].writing.load()) std::this_thread::yield();
++        }
++        fprintf(file_, "# clock=CLOCK_MONOTONIC pid=%d dropped=%llu slots=%u capacity=%u\n",
++                getpid(), (unsigned long long)dropped_.load(), Slots, Capacity);
++        fprintf(file_, "start_ns,end_ns,object,payload,tid,cpu,kind,ifindex,id,before,after,detail\n");
++        for (unsigned i = 0; i < Slots; ++i) {
++            const auto& ring = rings_[i];
++            const auto first = ring.count > Capacity ? ring.count - Capacity : 0;
++            fprintf(file_, "# slot=%u total=%llu overwritten=%llu\n", i,
++                    (unsigned long long)ring.count, (unsigned long long)first);
++            for (auto n = first; n < ring.count; ++n) {
++                const auto& e = ring.events[n % Capacity];
++                fprintf(file_, "%llu,%llu,%llu,%llu,%d,%d,%d,%d,%d,%d,%d,%d\n",
++                        (unsigned long long)e.start_ns, (unsigned long long)e.end_ns,
++                        (unsigned long long)e.object, (unsigned long long)e.payload,
++                        e.tid, e.cpu, e.kind, e.iface, e.id, e.before, e.after, e.detail);
++            }
++        }
++        fprintf(file_, "# dump_complete=1\n");
++        fflush(file_);
++    }
++public:
++    const bool enabled;
++    Recorder() : enabled([] { const char* p = getenv("MOTOR_RESPONSE_TRACE"); return p && !strcmp(p, "1"); }()) {
++        if (!enabled) return;
++        const char* dir = getenv("MOTOR_RESPONSE_TRACE_DIR");
++        if (!dir || !*dir) throw std::runtime_error("Set MOTOR_RESPONSE_TRACE_DIR to an existing writable directory");
++        char path[4096];
++        const int size = snprintf(path, sizeof(path), "%s/motor-response-%d-%llu.csv", dir,
++                                  getpid(), (unsigned long long)now_ns());
++        if (size < 0 || size >= int(sizeof(path))) throw std::runtime_error("Trace path too long");
++        file_ = fopen(path, "wx");
++        if (!file_) throw std::runtime_error("Cannot create motor response trace");
++        rings_.reset(new Ring[Slots]); // Allocate and touch storage before CAN threads start.
++        worker_ = std::thread([this] {
++            pthread_setname_np(pthread_self(), "motortrace_dump");
++            sched_param param{};
++            pthread_setschedparam(pthread_self(), SCHED_OTHER, &param);
++            while (!stop_.load() && !frozen_.load())
++                std::this_thread::sleep_for(std::chrono::milliseconds(100));
++            if (frozen_.load()) dump();
++        });
++    }
++    ~Recorder() {
++        if (!enabled) return;
++        frozen_.store(true);
++        stop_.store(true);
++        if (worker_.joinable()) worker_.join();
++        dump();
++        fclose(file_);
++    }
++    void emit(int kind, const void* object, int iface, int id, int before, int after,
++              int detail = 0, uint64_t payload = 0, uint64_t start = 0, uint64_t end = 0) {
++        if (!enabled || frozen_.load()) return;
++        thread_local const unsigned slot = claimed_.fetch_add(1);
++        thread_local const int thread_id = int(syscall(SYS_gettid));
++        if (slot >= Slots) { dropped_.fetch_add(1); return; }
++        auto& ring = rings_[slot];
++        // Sequentially consistent handshake: the reader freezes all writers first.
++        ring.writing.store(true);
++        if (!frozen_.load()) {
++            const auto stamp = end ? end : now_ns();
++            ring.events[ring.count % Capacity] = {start ? start : stamp, stamp,
++                uint64_t(reinterpret_cast<uintptr_t>(object)), payload,
++                thread_id, sched_getcpu(), kind, iface, id, before, after, detail};
++            ++ring.count;
++        }
++        ring.writing.store(false);
++    }
++    void freeze() { if (enabled) frozen_.store(true); }
++};
++inline Recorder& recorder() { static Recorder value; return value; }
++
++// Preserve atomic operation ordering, including the value replaced by RX clear.
++class Counter {
++    std::atomic<int> value_{0};
++    const void* owner_ = nullptr;
++    int iface_ = 0, id_ = 0;
++public:
++    explicit Counter(int value = 0) : value_(value) {}
++    void identify(const void* owner, int iface, int id) { owner_ = owner; iface_ = iface; id_ = id; }
++    int operator++(int) {
++        auto& r = recorder();
++        const auto begin = r.enabled ? now_ns() : 0;
++        const int old = value_.fetch_add(1);
++        if (r.enabled) r.emit(Increment, owner_, iface_, id_, old, old + 1, 0, 0, begin, now_ns());
++        return old;
++    }
++    Counter& operator=(int value) {
++        auto& r = recorder();
++        const auto begin = r.enabled ? now_ns() : 0;
++        const int old = value_.exchange(value);
++        if (r.enabled) r.emit(Clear, owner_, iface_, id_, old, value, 0, 0, begin, now_ns());
++        return *this;
++    }
++    operator int() const {
++        auto& r = recorder();
++        const auto begin = r.enabled ? now_ns() : 0;
++        const int value = value_.load();
++        if (r.enabled) r.emit(Check, owner_, iface_, id_, value, value, 0, 0, begin, now_ns());
++        return value;
++    }
++};
++}

@@ -1,4 +1,4 @@
-Source: robopi-analyze
+Source: roboparty-analyze
 Section: electronics
 Priority: optional
 Maintainer: RoboParty <1984715306@qq.com>
@@ -6,11 +6,22 @@ Build-Depends: debhelper-compat (= 13), zip
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 
-Package: robopi-analyze
+Package: roboparty-analyze
 Architecture: all
+Breaks: robopi-analyze (<< 1.0.11-1)
+Replaces: robopi-analyze (<< 1.0.11-1)
 Depends: ${misc:Depends}, can-utils, tcpdump, usbutils, kmod, python3,
          python3-serial, python3-usb, python3-crcmod, python3-hid, zip,
          python3-can
-Description: RoboPi HPM and communication diagnostics
+Description: RoboParty HPM and communication diagnostics
  Provides synchronized seven-dimensional logging, USB-CAN capture and
  analysis tools, HPM UART/flash tools, firmware and diagnostic dashboards.
+
+Package: robopi-analyze
+Architecture: all
+Section: oldlibs
+Priority: optional
+Depends: ${misc:Depends}, roboparty-analyze (= ${binary:Version})
+Description: Transitional package for roboparty-analyze
+ This package upgrades installations using the previous robopi-analyze name.
+ It can be removed after roboparty-analyze is installed.

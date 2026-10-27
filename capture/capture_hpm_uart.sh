@@ -5,7 +5,7 @@
 set -eu
 
 device=${HPM_LOG_DEVICE:-/dev/ttyS4}
-baud=${HPM_LOG_BAUD:-921600}
+baud=${HPM_LOG_BAUD:-1500000}
 
 case $baud in
     ''|*[!0-9]*) echo "hpm-log-capture: invalid baud rate: $baud" >&2; exit 1 ;;
@@ -16,6 +16,6 @@ while [ ! -c "$device" ]; do
     sleep 5
 done
 
-stty -F "$device" "$baud" raw -echo -ixon -ixoff -crtscts
+stty -F "$device" "$baud" raw cs8 -parenb -cstopb -echo -ixon -ixoff -crtscts
 echo "hpm-log-capture: recording $device at $baud baud" >&2
 exec cat "$device"
