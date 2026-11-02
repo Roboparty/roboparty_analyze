@@ -19,6 +19,7 @@
 #   HPM_BOOT_LED  boot brightness  (default: /sys/class/leds/hpm_boot_enable/brightness)
 #   HPM_RESET_SERVICE systemd unit paused during flashing
 #                     (default: hpm-sreset.service)
+#   HPM_ALLOW_UNKNOWN_IMAGE  yes = skip the 02 00 f9 fc boot-header check
 #==============================================================================
 
 set -euo pipefail
@@ -58,6 +59,23 @@ fi
 if [ ! -f "$FIRMWARE" ]; then
     echo "Error: firmware file not found: $FIRMWARE" >&2
     exit 1
+fi
+
+if [ ! -r "$FIRMWARE" ]; then
+    echo "Error: firmware file is not readable: $FIRMWARE" >&2
+    exit 1
+fi
+
+# The HPM boot ROM image starts with this header. Refuse to erase the chip for
+# a file that does not look like a flashable image.
+if [ "${HPM_ALLOW_UNKNOWN_IMAGE:-no}" != yes ]; then
+    header=$(od -An -tx1 -N4 -- "$FIRMWARE" | tr -d ' \n')
+    if [ "$header" != "0200f9fc" ]; then
+        echo "Error: $FIRMWARE is not an HPM boot image" >&2
+        echo "  first bytes: ${header:-<empty>}, expected: 0200f9fc" >&2
+        echo "  set HPM_ALLOW_UNKNOWN_IMAGE=yes to flash it anyway" >&2
+        exit 1
+    fi
 fi
 
 if ! command -v "$HPMTOOL" >/dev/null 2>&1; then

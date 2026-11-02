@@ -48,7 +48,7 @@ echo
 printf 'Total capture bytes: %s\n' "$total_bytes"
 echo "Auxiliary files:"
 for name in lsusb.txt lsusb-tree.txt can-interfaces.txt \
-    usbcan-capture-journal.txt dmesg.txt
+    usbcan-capture-journal.txt dmesg-live.txt
 do
     if [ -s "$snapshot/$name" ]; then
         printf '  OK      %s\n' "$name"

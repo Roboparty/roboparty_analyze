@@ -3,7 +3,7 @@
 # 适用于 RK3588 Linux
 # 需要 root 权限运行
 
-set -u
+set -eu
 
 BOOT="/sys/class/leds/hpm_boot_enable/brightness"
 RESET="/sys/class/leds/hpm_reset/brightness"
@@ -24,6 +24,19 @@ if [ "$EUID" -ne 0 ]; then
     echo "错误：请使用 root 权限运行此脚本"
     echo "示例：sudo $0"
     exit 1
+fi
+
+if [ "${1:-}" = "--reset" ]; then
+    echo "HPM 正常启动复位：BOOT 拉低，产生复位脉冲"
+    echo 0 > "$BOOT"
+    sleep 0.1
+
+    echo 0 > "$RESET"
+    sleep 0.1
+
+    echo 1 > "$RESET"
+    echo "复位完成：BOOT=0 RESET=1"
+    exit 0
 fi
 
 if [ "${1:-}" = "--monitor" ]; then

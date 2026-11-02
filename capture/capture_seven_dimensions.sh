@@ -92,7 +92,7 @@ run_session() {
     # Preflight: the target partition must fit the ring cap plus a margin.
     # Fail loudly here rather than let dimensions silently write 0-byte files.
     local need_kb have_kb
-    need_kb=$(( (${USBCAN_FILE_SIZE_MB:-64} * ${USBCAN_FILE_COUNT:-8} + 512) * 1024 ))
+    need_kb=$(( (${FILE_SIZE_MB:-64} * ${FILE_COUNT:-8} + 512) * 1024 ))
     have_kb=$(df -Pk "$session_parent" 2>/dev/null | awk 'NR==2 {print $4}' || true)
     [[ -n $have_kb && $have_kb -ge $need_kb ]] || \
         die "insufficient space in $session_parent: need ${need_kb} KiB, available ${have_kb:-unknown} KiB"

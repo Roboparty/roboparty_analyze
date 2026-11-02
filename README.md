@@ -257,8 +257,8 @@ analyze-ethercan-pcap /home/robo/usbcan-snapshots/YYYYMMDD-HHMMSS --top 50
 
 安装后的稳定命令包括 `robopi-seven-capture`、`robopi-seven-analyze`、
 `robopi-seven-export`、`robopi-comm-status`、`usbcan-capture`、
-`usbcan-debug-snapshot`、`hpm-log-capture`、`robopi-can-capture` 和
-`robopi-can-restart`。HPM 自动复位由 `hpm-sreset.service` 在后台处理。
+`usbcan-debug-snapshot`、`hpm-log-capture`、`robopi-can-capture`、
+`robopi-can-restart`、`analyze-ethercan-pcap` 和 `check-usbcan-snapshot`。HPM 自动复位由 `hpm-sreset.service` 在后台处理。
 
 `bin/flash_hpm.sh` 在烧录前停止 `hpm-sreset.service`，烧录完成后重新启动它，
 避免 HPM 进入 USB BootROM 时被监视器复位；可用 `HPM_RESET_SERVICE` 覆盖服务名。

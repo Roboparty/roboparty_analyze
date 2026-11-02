@@ -48,6 +48,8 @@ override_dh_auto_install:
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-comm-status
 	install -D -m 0755 bin/analyze_ethercan_pcap.py \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/analyze-ethercan-pcap
+	install -D -m 0755 analysis/check_usbcan_snapshot.sh \
+		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/check-usbcan-snapshot
 	install -D -m 0755 bin/flash_hpm.sh \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/flash_hpm.sh
 	install -D -m 0755 bin/hpmtool.py \
@@ -68,6 +70,8 @@ override_dh_auto_install:
 	ln -sf /opt/roboparty/bin/robopi-seven-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-capture
 	ln -sf /opt/roboparty/bin/robopi-seven-analyze $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-analyze
 	ln -sf /opt/roboparty/bin/analyze-can-asc $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-can-asc
+	ln -sf /opt/roboparty/bin/analyze-ethercan-pcap $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-ethercan-pcap
+	ln -sf /opt/roboparty/bin/check-usbcan-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/check-usbcan-snapshot
 	ln -sf /opt/roboparty/bin/robopi-seven-export $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-export
 	ln -sf /opt/roboparty/bin/robopi-session-cleanup $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-session-cleanup
 	ln -sf /opt/roboparty/bin/robopi-comm-status $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-comm-status

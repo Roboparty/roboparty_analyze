@@ -10,9 +10,10 @@ Package: roboparty-analyze
 Architecture: all
 Breaks: robopi-analyze (<< 1.0.11-1)
 Replaces: robopi-analyze (<< 1.0.11-1)
-Depends: ${misc:Depends}, can-utils, tcpdump, usbutils, kmod, python3,
+Depends: ${misc:Depends}, can-utils, tcpdump, usbutils, kmod, iproute2, python3,
          python3-serial, python3-usb, python3-crcmod, python3-hid, zip,
          python3-can
+Recommends: screen
 Description: RoboParty HPM and communication diagnostics
  Provides synchronized seven-dimensional logging, USB-CAN capture and
  analysis tools, HPM UART/flash tools, firmware and diagnostic dashboards.

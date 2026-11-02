@@ -1,3 +1,17 @@
+roboparty-analyze (1.0.16-1) stable; urgency=medium
+
+  * Package check_usbcan_snapshot.sh as check-usbcan-snapshot, expose
+    analyze-ethercan-pcap on PATH, and fix the snapshot dmesg file name.
+  * Add iproute2 to Depends and recommend screen.
+  * Use FILE_SIZE_MB/FILE_COUNT for the session space preflight.
+  * flash_hpm.sh: validate the HPM boot header and readability before
+    erasing.
+  * hpm_sreset.sh: enable set -e, add an explicit --reset mode; clean up
+    session-cleanup temp files.
+  * Bundle EtherCANFD v1.2.0 firmware (20261028) instead of v1.1.0.
+
+ -- wentywenty <2321901849@qq.com>  Mon, 02 Nov 2026 19:41:21 +0800
+
 roboparty-analyze (1.0.15-1) stable; urgency=medium
 
   * Install bundled firmware from the top-level firmware/ directory after it

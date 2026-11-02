@@ -35,6 +35,10 @@ DRY_RUN=no
 
 log() { echo "robopi-session-cleanup: $*" >&2; }
 
+list=
+cleanup() { [ -z "$list" ] || rm -f "$list" "$list.sorted"; }
+trap cleanup EXIT
+
 remove()
 {
     if [ "$DRY_RUN" = yes ]; then
