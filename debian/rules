@@ -10,7 +10,6 @@ override_dh_auto_install:
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/dimensions \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/analysis \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/diagnostics \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/firmware \
 		$(CURDIR)/debian/roboparty-analyze/etc/default \
 		$(CURDIR)/debian/roboparty-analyze/lib/systemd/system
@@ -26,12 +25,12 @@ override_dh_auto_install:
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/analysis/
 	install -m 0755 ebpf/*.sh ebpf/*.bt ebpf/capture-response-window.py ebpf/cpu0-flight.py ebpf/cpu0_flight_program.py \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf/
-	install -m 0644 ebpf/README.md ebpf/VERIFICATION*.txt ebpf/cpu0-trace-kernel.config \
+	install -m 0644 ebpf/README.md ebpf/cpu0-trace-kernel.config \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf/
-	install -m 0644 diagnostics/*.patch diagnostics/test-response-trace.cpp \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/diagnostics/
-	install -m 0755 diagnostics/analyze-response-trace.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/diagnostics/
+	install -D -m 0755 bin/analyze_response_trace.py \
+		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/analyze-response-trace
+	install -D -m 0755 bin/perf_capture.py \
+		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-perf-capture
 	install -D -m 0755 analysis/analyze_seven_dimensions.py \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-seven-analyze
 	install -D -m 0755 analysis/analyze_can_asc.py \
@@ -71,6 +70,8 @@ override_dh_auto_install:
 	ln -sf /opt/roboparty/bin/robopi-seven-analyze $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-analyze
 	ln -sf /opt/roboparty/bin/analyze-can-asc $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-can-asc
 	ln -sf /opt/roboparty/bin/analyze-ethercan-pcap $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-ethercan-pcap
+	ln -sf /opt/roboparty/bin/analyze-response-trace $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-response-trace
+	ln -sf /opt/roboparty/bin/robopi-perf-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-perf-capture
 	ln -sf /opt/roboparty/bin/check-usbcan-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/check-usbcan-snapshot
 	ln -sf /opt/roboparty/bin/robopi-seven-export $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-export
 	ln -sf /opt/roboparty/bin/robopi-session-cleanup $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-session-cleanup
@@ -80,12 +81,8 @@ override_dh_auto_install:
 	ln -sf /opt/roboparty/bin/hpm-log-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/hpm-log-capture
 	ln -sf /opt/roboparty/bin/robopi-can-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-capture
 	ln -sf /opt/roboparty/bin/robopi-can-restart $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-restart
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-link-stall.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-link-stall
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-can-path.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-can-path
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-usb-urb-lifecycle.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-usb-urb
 	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-can-state.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-can-state
 	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-monitor-sched.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-monitor-sched
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-cpu-can-sched.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-cpu-can-sched
 
 override_dh_installsystemd:
 	dh_installsystemd -proboparty-analyze hpm-log-capture.service

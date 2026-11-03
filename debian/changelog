@@ -1,3 +1,17 @@
+roboparty-analyze (1.0.18-1) stable; urgency=medium
+
+  * Trim the eBPF toolkit to the generic observation runners and drop
+    bundled test harnesses and verification logs.
+  * Install analyze-response-trace on PATH and remove the diagnostics
+    patch/test artifacts.
+  * Add robopi-perf-capture with PERF_BIN/RP_PERF_VENDOR/RP_PERF_OUTPUT
+    support; depend on sysstat and recommend linux-tools-common|linux-
+    perf.
+  * Remove the repository tests/ directory and ignore local test
+    artifacts.
+
+ -- wentywenty <2321901849@qq.com>  Tue, 03 Nov 2026 12:26:16 +0800
+
 roboparty-analyze (1.0.17-1) stable; urgency=medium
 
   * Stop building the transitional robopi-analyze package; the package

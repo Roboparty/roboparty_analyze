@@ -32,3 +32,6 @@ debian/*.substvars
 /tests/results/
 /tests/sessions/
 /tests/output/
+
+# Local test scripts and artifacts.
+/tests/

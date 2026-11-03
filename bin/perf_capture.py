@@ -9,11 +9,24 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import time
 
 
 BASE = Path(__file__).resolve().parent
-VENDOR = BASE / "vendor"
+PACKAGE_VENDOR = Path("/opt/roboparty/lib/roboparty-analyze/perf/vendor")
+
+
+def _vendor_dir():
+    if os.environ.get("RP_PERF_VENDOR"):
+        return Path(os.environ["RP_PERF_VENDOR"])
+    for candidate in (BASE / "vendor", PACKAGE_VENDOR):
+        if candidate.is_dir():
+            return candidate
+    return BASE / "vendor"
+
+
+VENDOR = _vendor_dir()
 ENV = dict(os.environ)
 ENV["LD_LIBRARY_PATH"] = str(VENDOR / "usr/lib/aarch64-linux-gnu") + (
     ":" + ENV["LD_LIBRARY_PATH"] if ENV.get("LD_LIBRARY_PATH") else ""
@@ -21,12 +34,18 @@ ENV["LD_LIBRARY_PATH"] = str(VENDOR / "usr/lib/aarch64-linux-gnu") + (
 
 
 def perf_binary():
+    configured = os.environ.get("PERF_BIN")
+    if configured:
+        candidate = configured if "/" in configured else shutil.which(configured)
+        if not candidate or not os.access(candidate, os.X_OK):
+            raise SystemExit(f"PERF_BIN is not executable: {configured}")
+        return candidate
     matches = sorted(VENDOR.glob("usr/lib/linux-tools-*/perf"))
     if matches:
         return str(matches[-1])
     binary = shutil.which("perf")
     if not binary:
-        raise SystemExit("perf is unavailable")
+        raise SystemExit("perf is unavailable; install linux-tools-common or set PERF_BIN")
     return binary
 
 
@@ -210,7 +229,7 @@ def capture(args):
     if meta["status"] == "failed":
         raise SystemExit(f"Capture failed: {directory}")
     print(f"Saved: {directory}")
-    print(f"After stopping robot, analyze with: python3 {BASE / 'capture.py'} analyze {directory}")
+    print(f"After stopping robot, analyze with: {Path(sys.argv[0]).name} analyze {directory}")
 
 
 def main():
@@ -220,7 +239,7 @@ def main():
         command = sub.add_parser(mode)
         command.add_argument("seconds", type=int, nargs="?", default=20)
         command.add_argument("--pid", type=int)
-        command.add_argument("--output", default="/home/robo/perf-results")
+        command.add_argument("--output", default=os.environ.get("RP_PERF_OUTPUT", "/home/robo/perf-results"))
     command = sub.add_parser("analyze")
     command.add_argument("directory")
     args = parser.parse_args()

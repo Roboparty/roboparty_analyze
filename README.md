@@ -1,7 +1,8 @@
 # roboparty-analyze
 
 仓库名为 `roboparty_analyze`，Debian 包名为 `roboparty-analyze`。
-1.0.11 起提供旧名 `robopi-analyze` 过渡包，原有采集命令和 service 名保持兼容。
+1.0.11 起包名改为 `roboparty-analyze`；1.0.17 起不再构建旧名
+`robopi-analyze` 过渡包，原有采集命令和 service 名保持兼容。
 
 RoboPi HPM、BMS、电源和通信故障分析工具包，面向 Ubuntu 24.04 ARM64 RoboPi
 系统。包内包含七维日志采集、USB-CAN 抓包、CAN ASC、HPM 串口和推理进程分析工具。
@@ -11,15 +12,26 @@ RoboPi HPM、BMS、电源和通信故障分析工具包，面向 Ubuntu 24.04 AR
 安装包同时提供只读 eBPF 观测工具，用于补充 USB pcap、CAN 日志和 dmesg 无法看到的内核时序。入口包括：
 
 ```text
-robopi-ebpf-link-stall CAN_IRQ USB_IRQ [SECONDS] [THRESHOLD_US]
-robopi-ebpf-can-path USB_BUS USB_DEV [THRESHOLD_US] [IFINDEX] [SECONDS]
-robopi-ebpf-usb-urb USB_BUS USB_DEV [SECONDS] [THRESHOLD_US]
 robopi-ebpf-can-state [IFACE] [SECONDS]
 robopi-ebpf-monitor-sched TID [SECONDS] [THRESHOLD_US]
-robopi-ebpf-cpu-can-sched CPU CAN_IRQ_TID USB_IRQ_TID CAN_RX_TID CAN_TX_TID [SECONDS] [THRESHOLD_US]
 ```
 
-这些命令需要 root、运行内核 BTF/kprobe 和 bpftrace。它们不会发送 CAN、修改波特率或 IRQ affinity；`robopi-ebpf-usb-urb` 记录主机 USB URB submit 到 HCD giveback 的生命周期，`robopi-ebpf-can-state` 记录 `can_bus_off`/`can_restart` 入口。入口事件不等于硬件恢复完成，USB-CAN 业务验证仍需接口 UP、明确固件身份和独立台架。完整边界与验证记录见安装目录的 `ebpf/README.md`。
+这些命令需要 root、运行内核 BTF/kprobe 和 bpftrace。它们不会发送 CAN、修改波特率或 IRQ affinity；`robopi-ebpf-can-state` 记录 `can_bus_off`/`can_restart` 入口，`robopi-ebpf-monitor-sched` 记录指定线程的 off-CPU/就绪等待。`rp-cpu0-trace.service`/`cpu0-flight.py` 提供 CPU0 故障窗口记录，`capture-response-window.py` 用于应用侧同窗观测。入口事件不等于硬件恢复完成，USB-CAN 业务验证仍需接口 UP、明确固件身份和独立台架。完整边界见安装目录的 `ebpf/README.md`。
+
+## perf 性能采集
+
+`robopi-perf-capture` 只观测已有负载，不启动/停止运控、不改亲和性/优先级、不发 CAN、不停止现有 BPF 探针。需要 root、`mpstat`/`pidstat`（sysstat）和 `perf`；自定义兼容 perf 用 `PERF_BIN`，vendored 工具链可用 `RP_PERF_VENDOR`。
+
+```bash
+sudo robopi-perf-capture sched 20          # 调度时间线、线程 CPU、频率/温度
+sudo robopi-perf-capture stats 20          # mpstat/pidstat 统计
+sudo robopi-perf-capture profile 20 --pid PID
+sudo robopi-perf-capture analyze OUTPUT_DIRECTORY   # 停机后分析
+```
+
+采集时长 2–60 秒；输出默认 `/home/robo/perf-results`，可用 `--output` 或 `RP_PERF_OUTPUT` 覆盖。不要同时跑 `sched` 和 `profile`；现有 BPF 探针会增加开销，对比时要记录当时的探针状态。
+
+解读时注意：`sched-timehist.txt` 的等待包含睡眠/阻塞，不等于锁等待；`hotspots.txt` 是 49 Hz 软件 `cpu-clock` 采样，缺少帧指针时栈不完整；`frequency.jsonl` 是 1 Hz 报告值；`metadata.json`、`record.stderr`、`events.txt` 要先确认没有 lost 事件。自定义 6.18 内核对 distro perf 的兼容性需实测，不能只看版本号。2026-10-22 已在 RK3588S/6.18.58 PREEMPT_RT 上做过 3 秒 sched/profile 和 2 秒 stats 验证，尚未做带载开销标定。
 
 ## 服务职责
 
@@ -258,7 +270,9 @@ analyze-ethercan-pcap /home/robo/usbcan-snapshots/YYYYMMDD-HHMMSS --top 50
 安装后的稳定命令包括 `robopi-seven-capture`、`robopi-seven-analyze`、
 `robopi-seven-export`、`robopi-comm-status`、`usbcan-capture`、
 `usbcan-debug-snapshot`、`hpm-log-capture`、`robopi-can-capture`、
-`robopi-can-restart`、`analyze-ethercan-pcap` 和 `check-usbcan-snapshot`。HPM 自动复位由 `hpm-sreset.service` 在后台处理。
+`robopi-can-restart`、`analyze-ethercan-pcap`、`analyze-response-trace`、
+`check-usbcan-snapshot` 和 `robopi-perf-capture`。HPM 自动复位由
+`hpm-sreset.service` 在后台处理。
 
 `bin/flash_hpm.sh` 在烧录前停止 `hpm-sreset.service`，烧录完成后重新启动它，
 避免 HPM 进入 USB BootROM 时被监视器复位；可用 `HPM_RESET_SERVICE` 覆盖服务名。
@@ -270,7 +284,6 @@ bin/         可直接执行的运维、烧录和导出命令
 capture/     七维采集流程脚本
 dimensions/  七个独立日志采集维度
 analysis/    离线分析程序
-tests/       测试脚本、样例抓包和分析结果
 README.md     项目说明和使用文档
 etc/         默认配置、systemd 单元和固件
 ```
