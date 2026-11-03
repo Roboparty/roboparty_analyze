@@ -17,12 +17,3 @@ Recommends: screen
 Description: RoboParty HPM and communication diagnostics
  Provides synchronized seven-dimensional logging, USB-CAN capture and
  analysis tools, HPM UART/flash tools, firmware and diagnostic dashboards.
-
-Package: robopi-analyze
-Architecture: all
-Section: oldlibs
-Priority: optional
-Depends: ${misc:Depends}, roboparty-analyze (= ${binary:Version})
-Description: Transitional package for roboparty-analyze
- This package upgrades installations using the previous robopi-analyze name.
- It can be removed after roboparty-analyze is installed.
