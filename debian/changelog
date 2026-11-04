@@ -1,3 +1,13 @@
+roboparty-analyze (1.0.19-1) stable; urgency=medium
+
+  * Add robopi-verify-bundle to check session directories and exported ZIPs
+    against files.sha256, reporting manifest metadata gaps as warnings.
+  * Take the shared control lock before HPM flashing unless the parent
+    process already holds it.
+  * Record capture completeness metadata in seven-dimension analysis output.
+
+ -- wentywenty <2321901849@qq.com>  Wed, 04 Nov 2026 22:30:00 +0800
+
 roboparty-analyze (1.0.18-1) stable; urgency=medium
 
   * Trim the eBPF toolkit to the generic observation runners and drop

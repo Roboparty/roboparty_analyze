@@ -253,6 +253,16 @@ def main():
         "ended_at_unix": manifest.get("ended_at_unix"),
         "event_count": len(rows),
         "dropped_outside_window": dropped,
+        # Carry capture completeness through analysis; a hash-valid export
+        # does not prove the recorders ran without errors.
+        "capture": {
+            "capture_failed": manifest.get("capture_failed"),
+            "candump_status": manifest.get("candump_status"),
+            "usb_capture_status": manifest.get("usb_capture_status"),
+            "failed_recorder": manifest.get("failed_recorder"),
+            "asc_mode": manifest.get("asc_mode"),
+            "session_complete": manifest.get("ended_at_unix") is not None,
+        },
         "events_by_dimension": {dimension: sum(row["dimension"] == dimension for row in rows)
                                  for dimension in sorted({row["dimension"] for row in rows})},
         "outputs": outputs,

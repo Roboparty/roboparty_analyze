@@ -41,6 +41,8 @@ override_dh_auto_install:
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-seven-export
 	install -D -m 0755 bin/save_usbcan_snapshot.sh \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/usbcan-debug-snapshot
+	install -D -m 0755 bin/verify_bundle.py \
+		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-verify-bundle
 	install -D -m 0755 bin/restart_can_interfaces.sh \
 		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-can-restart
 	install -D -m 0755 bin/show_communication_dashboard.py \

@@ -24,6 +24,19 @@
 
 set -euo pipefail
 
+CONTROL_LOCK="${ROBOPARTY_CONTROL_LOCK:-/dev/shm/roboparty-control.lock}"
+if [ "${ROBOPARTY_CONTROL_LOCK_HELD:-0}" != "1" ]; then
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "ERROR: flock 未安装，拒绝在无控制锁的情况下刷写" >&2
+        exit 2
+    fi
+    exec 8>>"$CONTROL_LOCK"
+    if ! flock -n 8; then
+        echo "ERROR: 机器人正被运控或其他维护任务占用（$CONTROL_LOCK）" >&2
+        exit 2
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -n "${HPMTOOL:-}" ]; then
