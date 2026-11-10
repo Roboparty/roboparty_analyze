@@ -13,6 +13,7 @@ Replaces: robopi-analyze (<< 1.0.11-1)
 Depends: ${misc:Depends}, can-utils, tcpdump, usbutils, kmod, iproute2,
          sysstat, python3, python3-serial, python3-usb, python3-crcmod,
          python3-hid, zip, python3-can
+Suggests: roboparty-base (>= 1.0.0)
 Recommends: screen, linux-tools-common | linux-perf
 Description: RoboParty HPM and communication diagnostics
  Provides synchronized seven-dimensional logging, USB-CAN capture and

@@ -8,10 +8,11 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/usbcan-capture
+EnvironmentFile=-/etc/roboos/env
 RuntimeDirectory=usbcan
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
-ExecStart=/opt/roboparty/bin/robopi-seven-capture
+ExecStart=/bin/bash -lc 'exec "$${ROBOOS_PREFIX:-/opt/roboparty}/bin/robopi-seven-capture"'
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT

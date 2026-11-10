@@ -14,7 +14,8 @@ import time
 
 
 BASE = Path(__file__).resolve().parent
-PACKAGE_VENDOR = Path("/opt/roboparty/lib/roboparty-analyze/perf/vendor")
+ROBOOS_PREFIX = Path(os.environ.get("ROBOOS_PREFIX") or BASE.parent)
+PACKAGE_VENDOR = ROBOOS_PREFIX / "lib/roboparty-analyze/perf/vendor"
 
 
 def _vendor_dir():

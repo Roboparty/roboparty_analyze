@@ -47,6 +47,12 @@ def guard(root, session_limit_mb, cleanup, runtime):
 
 
 if __name__ == '__main__':
+    default_cleanup = Path(__file__).resolve().parent / 'robopi-session-cleanup'
+    if not default_cleanup.is_file():
+        source_cleanup = Path(__file__).resolve().parent / 'cleanup_sessions.sh'
+        if source_cleanup.is_file():
+            default_cleanup = source_cleanup
+    cleanup = Path(os.environ.get('ROBOPI_SESSION_CLEANUP') or default_cleanup)
     guard(Path(os.environ.get('SESSION_ROOT', '/home/robo/robopi-logs')),
           int(os.environ.get('SESSION_MAX_SIZE_MB', '1024')),
-          '/opt/roboparty/bin/robopi-session-cleanup', Path('/run/usbcan'))
+          str(cleanup), Path('/run/usbcan'))

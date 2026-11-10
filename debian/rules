@@ -1,4 +1,6 @@
 #!/usr/bin/make -f
+
+INSTALL_PREFIX ?= /opt/roboparty
 # SPDX-FileCopyrightText: 2026 wentywenty <2321901849@qq.com>
 # SPDX-License-Identifier: GPL-3.0
 
@@ -6,85 +8,85 @@
 	dh $@
 
 override_dh_auto_install:
-	install -d $(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/dimensions \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/analysis \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/firmware \
+	install -d $(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin \
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/dimensions \
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/analysis \
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/ebpf \
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/firmware \
 		$(CURDIR)/debian/roboparty-analyze/etc/default \
 		$(CURDIR)/debian/roboparty-analyze/lib/systemd/system
 	install -D -m 0755 capture/capture_seven_dimensions.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-seven-capture
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-seven-capture
 	install -D -m 0755 capture/capture_usbcan_ring.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/usbcan-capture
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/usbcan-capture
 	install -D -m 0755 capture/capture_hpm_uart.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/hpm-log-capture
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/hpm-log-capture
 	install -m 0755 dimensions/* \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/dimensions/
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/dimensions/
 	install -m 0755 analysis/*.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/analysis/
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/analysis/
 	install -m 0755 ebpf/*.sh ebpf/*.bt ebpf/capture-response-window.py ebpf/cpu0-flight.py ebpf/cpu0_flight_program.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf/
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/ebpf/
 	install -m 0644 ebpf/README.md ebpf/cpu0-trace-kernel.config \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/roboparty-analyze/ebpf/
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/roboparty-analyze/ebpf/
 	install -D -m 0755 bin/analyze_response_trace.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/analyze-response-trace
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/analyze-response-trace
 	install -D -m 0755 bin/perf_capture.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-perf-capture
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-perf-capture
 	install -D -m 0755 analysis/analyze_seven_dimensions.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-seven-analyze
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-seven-analyze
 	install -D -m 0755 analysis/analyze_can_asc.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/analyze-can-asc
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/analyze-can-asc
 	install -D -m 0755 dimensions/06_can_asc.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-can-capture
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-can-capture
 	install -D -m 0755 bin/export_seven_dimensions.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-seven-export
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-seven-export
 	install -D -m 0755 bin/save_usbcan_snapshot.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/usbcan-debug-snapshot
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/usbcan-debug-snapshot
 	install -D -m 0755 bin/verify_bundle.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-verify-bundle
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-verify-bundle
 	install -D -m 0755 bin/restart_can_interfaces.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-can-restart
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-can-restart
 	install -D -m 0755 bin/show_communication_dashboard.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-comm-status
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-comm-status
 	install -D -m 0755 bin/analyze_ethercan_pcap.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/analyze-ethercan-pcap
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/analyze-ethercan-pcap
 	install -D -m 0755 analysis/check_usbcan_snapshot.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/check-usbcan-snapshot
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/check-usbcan-snapshot
 	install -D -m 0755 bin/flash_hpm.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/flash_hpm.sh
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/flash_hpm.sh
 	install -D -m 0755 bin/hpmtool.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/hpmtool
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/hpmtool
 	install -D -m 0755 bin/hpm_sreset.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/hpm_sreset
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/hpm_sreset
 	install -D -m 0755 bin/cleanup_sessions.sh \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-session-cleanup
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-session-cleanup
 	install -D -m 0755 bin/guard_sessions.py \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/bin/robopi-session-guard
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/bin/robopi-session-guard
 	install -m 0644 firmware/* \
-		$(CURDIR)/debian/roboparty-analyze/opt/roboparty/lib/firmware/
+		$(CURDIR)/debian/roboparty-analyze$(INSTALL_PREFIX)/lib/firmware/
 	install -m 0644 etc/default/* \
 		$(CURDIR)/debian/roboparty-analyze/etc/default/
 	install -m 0644 etc/systemd/system/* \
 		$(CURDIR)/debian/roboparty-analyze/lib/systemd/system/
 	install -d $(CURDIR)/debian/roboparty-analyze/usr/bin
-	ln -sf /opt/roboparty/bin/robopi-seven-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-capture
-	ln -sf /opt/roboparty/bin/robopi-seven-analyze $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-analyze
-	ln -sf /opt/roboparty/bin/analyze-can-asc $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-can-asc
-	ln -sf /opt/roboparty/bin/analyze-ethercan-pcap $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-ethercan-pcap
-	ln -sf /opt/roboparty/bin/analyze-response-trace $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-response-trace
-	ln -sf /opt/roboparty/bin/robopi-perf-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-perf-capture
-	ln -sf /opt/roboparty/bin/check-usbcan-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/check-usbcan-snapshot
-	ln -sf /opt/roboparty/bin/robopi-seven-export $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-export
-	ln -sf /opt/roboparty/bin/robopi-session-cleanup $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-session-cleanup
-	ln -sf /opt/roboparty/bin/robopi-comm-status $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-comm-status
-	ln -sf /opt/roboparty/bin/usbcan-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/usbcan-capture
-	ln -sf /opt/roboparty/bin/usbcan-debug-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/usbcan-debug-snapshot
-	ln -sf /opt/roboparty/bin/hpm-log-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/hpm-log-capture
-	ln -sf /opt/roboparty/bin/robopi-can-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-capture
-	ln -sf /opt/roboparty/bin/robopi-can-restart $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-restart
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-can-state.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-can-state
-	ln -sf /opt/roboparty/lib/roboparty-analyze/ebpf/run-monitor-sched.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-monitor-sched
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-seven-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-capture
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-seven-analyze $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-analyze
+	ln -sf $(INSTALL_PREFIX)/bin/analyze-can-asc $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-can-asc
+	ln -sf $(INSTALL_PREFIX)/bin/analyze-ethercan-pcap $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-ethercan-pcap
+	ln -sf $(INSTALL_PREFIX)/bin/analyze-response-trace $(CURDIR)/debian/roboparty-analyze/usr/bin/analyze-response-trace
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-perf-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-perf-capture
+	ln -sf $(INSTALL_PREFIX)/bin/check-usbcan-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/check-usbcan-snapshot
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-seven-export $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-seven-export
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-session-cleanup $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-session-cleanup
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-comm-status $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-comm-status
+	ln -sf $(INSTALL_PREFIX)/bin/usbcan-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/usbcan-capture
+	ln -sf $(INSTALL_PREFIX)/bin/usbcan-debug-snapshot $(CURDIR)/debian/roboparty-analyze/usr/bin/usbcan-debug-snapshot
+	ln -sf $(INSTALL_PREFIX)/bin/hpm-log-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/hpm-log-capture
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-can-capture $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-capture
+	ln -sf $(INSTALL_PREFIX)/bin/robopi-can-restart $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-can-restart
+	ln -sf $(INSTALL_PREFIX)/lib/roboparty-analyze/ebpf/run-can-state.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-can-state
+	ln -sf $(INSTALL_PREFIX)/lib/roboparty-analyze/ebpf/run-monitor-sched.sh $(CURDIR)/debian/roboparty-analyze/usr/bin/robopi-ebpf-monitor-sched
 
 override_dh_installsystemd:
 	dh_installsystemd -proboparty-analyze hpm-log-capture.service

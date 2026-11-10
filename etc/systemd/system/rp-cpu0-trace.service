@@ -4,7 +4,8 @@ After=systemd-udev-trigger.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/roboparty/lib/roboparty-analyze/ebpf/cpu0-flight.py run
+EnvironmentFile=-/etc/roboos/env
+ExecStart=/bin/bash -lc 'exec /usr/bin/python3 "$${ROBOOS_PREFIX:-/opt/roboparty}/lib/roboparty-analyze/ebpf/cpu0-flight.py" run'
 Nice=10
 RuntimeDirectory=roboparty-cpu0-trace
 KillSignal=SIGINT

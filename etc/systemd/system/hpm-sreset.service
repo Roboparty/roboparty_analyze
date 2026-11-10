@@ -5,7 +5,8 @@ After=local-fs.target systemd-modules-load.service
 
 [Service]
 Type=simple
-ExecStart=/opt/roboparty/bin/hpm_sreset --monitor
+EnvironmentFile=-/etc/roboos/env
+ExecStart=/bin/bash -lc 'exec "$${ROBOOS_PREFIX:-/opt/roboparty}/bin/hpm_sreset" --monitor'
 Restart=always
 RestartSec=5
 StandardOutput=journal

@@ -12,10 +12,10 @@
 
 ```bash
 sudo systemctl start rp-cpu0-trace
-sudo python3 /opt/roboparty/lib/roboparty-analyze/ebpf/cpu0-flight.py status
-sudo python3 /opt/roboparty/lib/roboparty-analyze/ebpf/cpu0-flight.py arm
+sudo python3 ${ROBOOS_PREFIX:-/opt/roboparty}/lib/roboparty-analyze/ebpf/cpu0-flight.py status
+sudo python3 ${ROBOOS_PREFIX:-/opt/roboparty}/lib/roboparty-analyze/ebpf/cpu0-flight.py arm
 # 故障之外的手动保存，不触碰机器人：
-sudo python3 /opt/roboparty/lib/roboparty-analyze/ebpf/cpu0-flight.py dump
+sudo python3 ${ROBOOS_PREFIX:-/opt/roboparty}/lib/roboparty-analyze/ebpf/cpu0-flight.py dump
 ```
 
 第一次异常冻结后导出到 `/home/robo/ebpf/results/cpu0-flight-*`，随后服务保持 captured 状态，不再挂载探针、不覆盖首个窗口。下一轮业务停止后重启服务重新记录。启动/冻结导出期间状态可能暂不可用，不能复用旧 READY。

@@ -5,7 +5,8 @@ Documentation=file:/usr/share/doc/roboparty-analyze/README.md
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/hpm-log-capture
-ExecStart=/opt/roboparty/bin/hpm-log-capture
+EnvironmentFile=-/etc/roboos/env
+ExecStart=/bin/bash -lc 'exec "$${ROBOOS_PREFIX:-/opt/roboparty}/bin/hpm-log-capture"'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

@@ -35,19 +35,20 @@ command -v systemctl >/dev/null 2>&1 || die "systemctl not found"
 [[ $interval =~ ^[0-9]+([.][0-9]+)?$ && $interval != 0 ]] || die "CAN_DETAILS_INTERVAL must be positive"
 [[ $rotate_secs =~ ^[0-9]+$ ]] || die "SESSION_MAX_DURATION_SECS must be a non-negative integer"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ROBOOS_PREFIX="${ROBOOS_PREFIX:-$(cd -- "$script_dir/.." && pwd)}"
 dimension_dir=${SEVEN_DIMENSIONS_DIR:-$script_dir/../dimensions}
-if [[ ! -x $dimension_dir/01_bms_status.sh && -x /opt/roboparty/lib/roboparty-analyze/dimensions/01_bms_status.sh ]]; then
-    dimension_dir=/opt/roboparty/lib/roboparty-analyze/dimensions
+if [[ ! -x $dimension_dir/01_bms_status.sh && -x $ROBOOS_PREFIX/lib/roboparty-analyze/dimensions/01_bms_status.sh ]]; then
+    dimension_dir=$ROBOOS_PREFIX/lib/roboparty-analyze/dimensions
 fi
 [[ -x $dimension_dir/01_bms_status.sh ]] || die "dimension scripts not found: $dimension_dir"
 ring_capture=${USBCAN_RING_CAPTURE_COMMAND:-$script_dir/capture_usbcan_ring.sh}
-if [[ ! -x $ring_capture && -x /opt/roboparty/bin/usbcan-capture ]]; then
-    ring_capture=/opt/roboparty/bin/usbcan-capture
+if [[ ! -x $ring_capture && -x $ROBOOS_PREFIX/bin/usbcan-capture ]]; then
+    ring_capture=$ROBOOS_PREFIX/bin/usbcan-capture
 fi
 [[ -x $ring_capture ]] || die "USB-CAN ring capture command not found: $ring_capture"
 cleanup_command=${SESSION_CLEANUP_COMMAND:-$script_dir/cleanup_sessions.sh}
-if [[ ! -x $cleanup_command && -x /opt/roboparty/bin/robopi-session-cleanup ]]; then
-    cleanup_command=/opt/roboparty/bin/robopi-session-cleanup
+if [[ ! -x $cleanup_command && -x $ROBOOS_PREFIX/bin/robopi-session-cleanup ]]; then
+    cleanup_command=$ROBOOS_PREFIX/bin/robopi-session-cleanup
 fi
 
 # stop_requested is set only by a real external signal (systemctl stop,

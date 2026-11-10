@@ -5,7 +5,8 @@ After=usbcan-capture.service
 [Service]
 Type=oneshot
 EnvironmentFile=-/etc/default/usbcan-capture
-ExecStart=/opt/roboparty/bin/robopi-session-guard
+EnvironmentFile=-/etc/roboos/env
+ExecStart=/bin/bash -lc 'exec "$${ROBOOS_PREFIX:-/opt/roboparty}/bin/robopi-session-guard"'
 Nice=15
 IOSchedulingClass=idle
 CPUSchedulingPolicy=batch

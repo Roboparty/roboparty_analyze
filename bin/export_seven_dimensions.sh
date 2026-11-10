@@ -15,9 +15,11 @@ archive=$(realpath -m "$archive")
 [[ $archive != "$session"/* ]] || { echo "Output ZIP must be outside the session directory" >&2; exit 1; }
 command -v zip >/dev/null 2>&1 || { echo "Missing zip; install zip" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "Missing sha256sum" >&2; exit 1; }
-analyzer=$(dirname "$0")/analyze_seven_dimensions.py
-[[ -f $analyzer ]] || analyzer=$(dirname "$0")/../analysis/analyze_seven_dimensions.py
-[[ -f $analyzer ]] || analyzer=/opt/roboparty/bin/robopi-seven-analyze
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ROBOOS_PREFIX="${ROBOOS_PREFIX:-$(cd "$script_dir/.." && pwd)}"
+analyzer=$script_dir/analyze_seven_dimensions.py
+[[ -f $analyzer ]] || analyzer=$script_dir/../analysis/analyze_seven_dimensions.py
+[[ -f $analyzer ]] || analyzer=$ROBOOS_PREFIX/bin/robopi-seven-analyze
 [[ -f $analyzer ]] || { echo "Analyzer not found: $analyzer" >&2; exit 1; }
 python3 "$analyzer" "$session"
 stage=$(mktemp -d)
